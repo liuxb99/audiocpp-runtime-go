@@ -1,0 +1,6 @@
+[submodule "audio.cpp"]
+	path = audio.cpp
+	url = https://github.com/0xShug0/audio.cpp.git
+[submodule "audio.cpp-webui"]
+	path = audio.cpp-webui
+	url = https://github.com/kigner/audio.cpp-webui.git
