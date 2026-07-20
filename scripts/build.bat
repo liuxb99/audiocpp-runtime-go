@@ -1,28 +1,25 @@
 @echo off
 setlocal enabledelayedexpansion
 
-cd /d "%~dp0"
+set "ROOT_DIR=%~dp0.."
+cd /d "%ROOT_DIR%"
 
-echo === AudioC++ Runtime Go Build ===
-echo.
+echo Building audiocpp-runtime-go...
 
 if not exist "bin" mkdir bin
 
-echo [1/2] Building audiocpp-runtime.exe...
 go build -ldflags="-s -w" -o bin\audiocpp-runtime.exe .\cmd\audiocpp-runtime\
 if %ERRORLEVEL% neq 0 (
     echo ERROR: audiocpp-runtime build failed
     exit /b 1
 )
-echo OK: bin\audiocpp-runtime.exe
+echo Built: bin\audiocpp-runtime.exe
 
-echo [2/2] Building audiocppctl.exe...
 go build -ldflags="-s -w" -o bin\audiocppctl.exe .\cmd\audiocppctl\
 if %ERRORLEVEL% neq 0 (
     echo ERROR: audiocppctl build failed
     exit /b 1
 )
-echo OK: bin\audiocppctl.exe
+echo Built: bin\audiocppctl.exe
 
-echo.
 echo Build complete.

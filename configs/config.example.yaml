@@ -1,0 +1,31 @@
+server:
+  host: "127.0.0.1"
+  port: 8091
+
+audiocpp:
+  server_path: "runtime/audio.cpp/bin/audiocpp_server.exe"
+  cli_path: "runtime/audio.cpp/bin/audiocpp_cli.exe"
+  working_dir: "runtime/audio.cpp"
+  backend: "cuda"
+  device: 0
+  host: "127.0.0.1"
+  port: 8092
+  startup_timeout_seconds: 120
+  request_timeout_seconds: 600
+  auto_restart: true
+  max_restart_attempts: 5
+
+storage:
+  sqlite_path: "data/runtime.db"
+
+models:
+  root_dir: "models"
+  registry_path: "data/models.json"
+
+outputs:
+  root_dir: "outputs"
+  retain_days: 30
+
+jobs:
+  workers: 1
+  queue_size: 100

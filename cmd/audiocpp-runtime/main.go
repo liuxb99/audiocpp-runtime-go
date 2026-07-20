@@ -1,100 +1,91 @@
 package main
 
 import (
+	"context"
 	"flag"
-	"fmt"
+	"log"
+	"net/http"
 	"os"
-	"path/filepath"
+	"os/signal"
+	"syscall"
+	"time"
 
-	"github.com/user/audiocppruntime/internal/server"
+	"gopkg.in/yaml.v2"
+
+	"github.com/liuxb99/audiocpp-runtime-go/internal/api"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/audiocpp"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/config"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/jobs"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/models"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/outputs"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/storage"
 )
 
 func main() {
-	port := flag.Int("port", 7860, "WebUI port")
-	host := flag.String("host", "127.0.0.1", "WebUI host")
-	bundle := flag.String("bundle", "", "Bundle root directory (contains cpu/ gpu/ models/)")
-	backend := flag.String("backend", "", "Backend: gpu|cuda|cpu (auto-detect if empty)")
-	device := flag.Int("device", 0, "GPU device ID")
-	threads := flag.Int("threads", 0, "Compute threads (0=auto)")
-	loadTimeout := flag.Int("load-timeout", 300, "Model load timeout in seconds")
+	configPath := flag.String("config", "configs/config.yaml", "path to config file")
 	flag.Parse()
 
-	bundleRoot := *bundle
-	if bundleRoot == "" {
-		bundleRoot = findBundleRoot()
-	}
+	baseDir, _ := os.Getwd()
 
-	bk := *backend
-	if bk == "" {
-		bk = detectBackend(bundleRoot)
-	}
-
-	thr := *threads
-	if thr <= 0 {
-		if bk == "cpu" {
-			thr = 4
-		} else {
-			thr = 1
+	cfg := config.DefaultConfig()
+	if data, err := os.ReadFile(*configPath); err == nil {
+		if err := yaml.Unmarshal(data, cfg); err != nil {
+			log.Fatalf("failed to parse config: %v", err)
 		}
+	} else {
+		log.Printf("no config file at %s, using defaults", *configPath)
+	}
+	cfg.ResolvePaths(baseDir)
+
+	if err := cfg.Validate(baseDir); err != nil {
+		log.Fatalf("config validation failed: %v", err)
 	}
 
-	fmt.Printf("[runtime] Bundle root: %s\n", bundleRoot)
-	fmt.Printf("[runtime] Backend: %s\n", bk)
-	fmt.Printf("[runtime] WebUI: http://%s:%d\n", *host, *port)
+	db, err := storage.NewDB(cfg.Storage.SqlitePath)
+	if err != nil {
+		log.Fatalf("failed to open database: %v", err)
+	}
+	defer db.Close()
 
-	cfg := server.Config{
-		Port:        *port,
-		Host:        *host,
-		BundleRoot:  bundleRoot,
-		CatalogPath: filepath.Join("webui", "configs", "models_catalog.json"),
-		Backend:     bk,
-		Device:      *device,
-		Threads:     thr,
-		LoadTimeout: *loadTimeout,
+	if err := db.RunMigrations(); err != nil {
+		log.Fatalf("failed to run migrations: %v", err)
 	}
 
-	srv := server.New(cfg)
-	if err := srv.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
-		os.Exit(1)
-	}
-}
+	ac := audiocpp.NewClient(cfg.AudioCpp.Host, cfg.AudioCpp.Port,
+		time.Duration(cfg.AudioCpp.RequestTimeoutSec)*time.Second)
 
-func findBundleRoot() string {
-	candidates := []string{
-		".",
-		"..",
-		"../audiocpp-portable",
+	modelReg := models.NewRegistry(cfg.Models.RegistryPath)
+	if err := modelReg.Load(); err != nil {
+		log.Printf("warning: could not load model registry: %v", err)
 	}
-	for _, c := range candidates {
-		abs, _ := filepath.Abs(c)
-		if hasBackendDir(abs) {
-			return abs
+
+	jobRepo := storage.NewJobsRepository(db)
+	outputRepo := storage.NewOutputsRepository(db)
+
+	outputMgr := outputs.NewManager(cfg.Outputs.RootDir, cfg.Outputs.RetainDays, outputRepo)
+
+	jobMgr := jobs.NewManager(jobRepo)
+	workerPool := jobs.NewWorkerPool(jobMgr, ac, cfg.Jobs.Workers)
+	workerPool.Start()
+
+	apiServer := api.NewServer(cfg, ac, jobMgr, modelReg, outputMgr)
+
+	go func() {
+		if err := apiServer.Start(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server error: %v", err)
 		}
-	}
-	abs, _ := filepath.Abs(".")
-	return abs
-}
+	}()
 
-func hasBackendDir(root string) bool {
-	for _, dir := range []string{"gpu", "cpu"} {
-		info, err := os.Stat(filepath.Join(root, dir))
-		if err == nil && info.IsDir() {
-			return true
-		}
-	}
-	return false
-}
+	log.Printf("audiocpp-runtime started on %s:%d", cfg.Server.Host, cfg.Server.Port)
 
-func detectBackend(bundleRoot string) string {
-	nvcuda := filepath.Join(os.Getenv("SystemRoot"), "System32", "nvcuda.dll")
-	if _, err := os.Stat(nvcuda); err == nil {
-		if _, err := os.Stat(filepath.Join(bundleRoot, "gpu", "audiocpp_server.exe")); err == nil {
-			return "cuda"
-		}
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("shutting down...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := apiServer.Stop(ctx); err != nil {
+		log.Fatalf("server shutdown error: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(bundleRoot, "cpu", "audiocpp_server.exe")); err == nil {
-		return "cpu"
-	}
-	return "cuda"
 }

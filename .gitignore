@@ -1,37 +1,31 @@
 # Binaries
+bin/
 *.exe
 *.dll
 *.so
 *.dylib
-bin/
 
-# Build output
-audiocpp-runtime.exe
-
-# Go
-vendor/
-*.test
-*.out
-*.test.exe
+# Data
+data/
+outputs/
+models/*.gguf
+models/*.safetensors
 
 # IDE
-.vs/
-.vscode/
 .idea/
+.vscode/
+.reasonix/
 *.swp
 *.swo
-
-# Temp files
-*.tmp
-*.log
-*.cache
-__pycache__/
-*.pyc
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Config overrides
-.env
-.env.local
+# Build
+*.test
+*.out
+*.test.exe
+
+# Config override
+configs/config.yaml

@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AudioC++ Runtime</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh}
+header{background:#161b22;padding:16px 24px;border-bottom:1px solid #30363d;display:flex;align-items:center;justify-content:space-between}
+header h1{font-size:20px;color:#f0f6fc}
+header h1 span{color:#58a6ff}
+nav{display:flex;gap:4px}
+nav a{color:#8b949e;text-decoration:none;cursor:pointer;padding:8px 14px;border-radius:6px;font-size:14px;transition:all .15s}
+nav a:hover{color:#f0f6fc;background:#1c2128}
+nav a.active{color:#f0f6fc;background:#1f6feb33}
+.container{max-width:1200px;margin:0 auto;padding:24px}
+.tab{display:none}
+.tab.active{display:block}
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px;margin:0 0 16px 0}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.card h2{font-size:18px;color:#f0f6fc;margin-bottom:4px}
+.card p{color:#8b949e;font-size:13px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.stat-card{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px;text-align:center}
+.stat-card .value{font-size:32px;font-weight:600;color:#f0f6fc}
+.stat-card .label{font-size:12px;color:#8b949e;margin-top:4px}
+.stat-card.ok .value{color:#3fb950}
+.stat-card.warn .value{color:#d29922}
+.stat-card.err .value{color:#f85149}
+label{display:block;font-size:13px;font-weight:500;color:#c9d1d9;margin-bottom:4px;margin-top:12px}
+label:first-child{margin-top:0}
+input,select,textarea{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:8px 12px;border-radius:6px;width:100%;font-size:14px;font-family:inherit;outline:none;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{border-color:#58a6ff}
+textarea{resize:vertical;min-height:80px;font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:13px}
+select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238b949e' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:30px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-actions{margin-top:16px;display:flex;gap:8px;align-items:center}
+.btn{background:#21262d;color:#c9d1d9;border:1px solid #30363d;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;transition:all .15s}
+.btn:hover{background:#30363d}
+.btn-primary{background:#238636;color:#fff;border:1px solid rgba(240,246,252,.1)}
+.btn-primary:hover{background:#2ea043}
+.btn-primary:disabled{background:#23863680;cursor:not-allowed}
+.btn-danger{background:#da3633;color:#fff;border:1px solid rgba(240,246,252,.1)}
+.btn-danger:hover{background:#f85149}
+.btn-sm{padding:4px 10px;font-size:12px}
+.alert{padding:12px 16px;border-radius:6px;margin:12px 0;font-size:13px}
+.alert-error{background:#490202;border:1px solid #f8514966;color:#ffa198}
+.alert-info{background:#0c2d6b;border:1px solid #58a6ff66;color:#79c0ff}
+.alert-success{background:#04260f;border:1px solid #3fb95066;color:#56d364}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hidden{display:none!important}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.badge-ok,.badge-completed,.badge-success{background:#1a7f37;color:#fff}
+.badge-running,.badge-pending{background:#1f6feb;color:#fff}
+.badge-queued{background:#9e6a03;color:#fff}
+.badge-error,.badge-failed{background:#da3633;color:#fff}
+.badge-cancelled{background:#6e7681;color:#fff}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;border-bottom:1px solid #30363d;text-transform:uppercase;font-size:11px;letter-spacing:.5px}
+td{padding:8px 12px;border-bottom:1px solid #21262d;vertical-align:middle}
+tr:hover td{background:#1c2128}
+.mono{font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:12px}
+.text-right{text-align:right}
+.text-muted{color:#8b949e}
+.mt-4{margin-top:4px}
+.mt-8{margin-top:8px}
+.mt-12{margin-top:12px}
+.mb-8{margin-bottom:8px}
+.mb-12{margin-bottom:12px}
+.model-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.model-card{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px}
+.model-card h3{color:#f0f6fc;font-size:15px;margin-bottom:4px}
+.model-card .detail{font-size:12px;color:#8b949e;margin-top:2px}
+.model-card .tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.model-card .tags span{background:#1c2128;padding:2px 8px;border-radius:10px;font-size:11px;color:#8b949e;border:1px solid #30363d}
+.job-status{display:flex;align-items:center;gap:6px}
+.progress-bar{width:80px;height:6px;background:#21262d;border-radius:3px;overflow:hidden}
+.progress-bar .fill{height:100%;background:#58a6ff;border-radius:3px;transition:width .3s}
+.progress-bar .fill.completed{background:#3fb950}
+.progress-bar .fill.failed{background:#f85149}
+audio{width:100%;margin-top:8px;border-radius:4px}
+audio::-webkit-media-controls-panel{background:#161b22}
+.empty-state{text-align:center;padding:40px 20px;color:#8b949e}
+.empty-state h3{color:#f0f6fc;margin-bottom:4px}
+.capabilities-list{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.capabilities-list span{background:#1c2128;padding:2px 8px;border-radius:10px;font-size:11px;color:#8b949e;border:1px solid #30363d}
+.file-upload{position:relative;display:flex;align-items:center;gap:12px;padding:12px 16px;background:#0d1117;border:1px dashed #30363d;border-radius:6px;cursor:pointer;transition:border-color .15s}
+.file-upload:hover{border-color:#58a6ff}
+.file-upload input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+.file-upload .icon{font-size:20px;color:#8b949e}
+.file-upload .text{font-size:13px;color:#8b949e}
+.file-upload .text strong{color:#c9d1d9}
+.file-upload.has-file{border-style:solid;border-color:#238636}
+.file-upload.has-file .text{color:#3fb950}
+.refresh-btn{display:flex;align-items:center;gap:6px;font-size:12px;color:#8b949e;cursor:pointer;background:none;border:none;padding:4px 8px;border-radius:4px}
+.refresh-btn:hover{color:#f0f6fc;background:#1c2128}
+.refresh-btn svg{width:14px;height:14px;fill:currentColor}
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>Audio</span>C++ Runtime</h1>
+  <nav>
+    <a class="active" data-tab="dashboard">Dashboard</a>
+    <a data-tab="tts">TTS</a>
+    <a data-tab="asr">ASR</a>
+    <a data-tab="models">Models</a>
+    <a data-tab="jobs">Jobs</a>
+  </nav>
+</header>
+
+<div class="container">
+
+<div id="tab-dashboard" class="tab active">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h2>Server Health</h2>
+        <p>Runtime status and statistics</p>
+      </div>
+      <button class="btn btn-sm" onclick="loadDashboard()" id="dash-refresh">Refresh</button>
+    </div>
+    <div id="dash-status"></div>
+    <div class="stat-grid" id="dash-stats"></div>
+  </div>
+  <div class="card" id="dash-capabilities">
+    <h2>Capabilities</h2>
+    <p>Supported audio processing features</p>
+    <div class="capabilities-list mt-8" id="dash-caps-list"></div>
+  </div>
+</div>
+
+<div id="tab-tts" class="tab">
+  <div class="card">
+    <h2>Text-to-Speech</h2>
+    <p>Generate speech from text using available models</p>
+    <div id="tts-alert"></div>
+    <div class="form-row">
+      <div>
+        <label for="tts-model">Model</label>
+        <select id="tts-model" onchange="onTTSModelChange()"><option value="">Loading...</option></select>
+      </div>
+      <div>
+        <label for="tts-voice">Voice</label>
+        <select id="tts-voice"><option value="">Loading...</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <label for="tts-language">Language</label>
+        <select id="tts-language"><option value="">Default</option></select>
+      </div>
+      <div>
+        <label for="tts-response-format">Format</label>
+        <select id="tts-response-format">
+          <option value="">Default</option>
+          <option value="wav">WAV</option>
+          <option value="mp3">MP3</option>
+          <option value="opus">Opus</option>
+        </select>
+      </div>
+    </div>
+    <label for="tts-text">Text</label>
+    <textarea id="tts-text" placeholder="Enter text to synthesize..."></textarea>
+    <details style="margin-top:8px">
+      <summary style="cursor:pointer;color:#8b949e;font-size:13px">Advanced options</summary>
+      <div class="form-row mt-8">
+        <div>
+          <label for="tts-temp">Temperature</label>
+          <input type="number" id="tts-temp" step="0.1" min="0" max="2" placeholder="0.0 - 2.0">
+        </div>
+        <div>
+          <label for="tts-topk">Top-K</label>
+          <input type="number" id="tts-topk" min="0" placeholder="e.g. 50">
+        </div>
+      </div>
+      <div class="form-row">
+        <div>
+          <label for="tts-topp">Top-P</label>
+          <input type="number" id="tts-topp" step="0.05" min="0" max="1" placeholder="0.0 - 1.0">
+        </div>
+        <div>
+          <label for="tts-seed">Seed</label>
+          <input type="number" id="tts-seed" min="0" placeholder="Random seed">
+        </div>
+      </div>
+      <div class="form-row">
+        <div>
+          <label for="tts-maxtokens">Max Tokens</label>
+          <input type="number" id="tts-maxtokens" min="0" placeholder="e.g. 512">
+        </div>
+        <div>
+          <label for="tts-reppen">Repetition Penalty</label>
+          <input type="number" id="tts-reppen" step="0.1" min="0" max="5" placeholder="1.0 - 5.0">
+        </div>
+      </div>
+    </details>
+    <div class="form-actions">
+      <button class="btn btn-primary" onclick="doTTS()" id="tts-btn">Generate</button>
+      <span id="tts-spinner" class="spinner hidden"></span>
+    </div>
+    <div id="tts-result" class="hidden mt-12">
+      <audio id="tts-audio" controls></audio>
+    </div>
+  </div>
+</div>
+
+<div id="tab-asr" class="tab">
+  <div class="card">
+    <h2>Automatic Speech Recognition</h2>
+    <p>Transcribe audio files to text</p>
+    <div id="asr-alert"></div>
+    <label for="asr-model">Model</label>
+    <select id="asr-model"><option value="">Loading...</option></select>
+    <label for="asr-language">Language</label>
+    <select id="asr-language"><option value="">Auto-detect</option></select>
+    <label for="asr-file">Audio File</label>
+    <div class="file-upload" id="asr-file-upload">
+      <input type="file" id="asr-file" accept="audio/*" onchange="onASRFileChange(this)">
+      <span class="icon">&#x1F3A4;</span>
+      <span class="text" id="asr-file-label"><strong>Click to select</strong> or drag audio file here</span>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" onclick="doASR()" id="asr-btn">Transcribe</button>
+      <span id="asr-spinner" class="spinner hidden"></span>
+    </div>
+    <div id="asr-result" class="hidden mt-12">
+      <label>Transcription</label>
+      <pre id="asr-text" style="white-space:pre-wrap;background:#0d1117;padding:12px;border-radius:6px;border:1px solid #30363d;margin-top:4px"></pre>
+      <div id="asr-timing" class="text-muted mt-8" style="font-size:12px"></div>
+    </div>
+  </div>
+</div>
+
+<div id="tab-models" class="tab">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h2>Models</h2>
+        <p>Available audio models registered with the runtime</p>
+      </div>
+      <button class="btn btn-sm" onclick="loadModels()">Refresh</button>
+    </div>
+    <div id="models-list"><div class="empty-state"><span class="spinner"></span></div></div>
+  </div>
+</div>
+
+<div id="tab-jobs" class="tab">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h2>Jobs</h2>
+        <p>Processing jobs and their status</p>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="loadJobs()">Refresh</button>
+      </div>
+    </div>
+    <div id="jobs-table-wrapper"></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+const API = {
+  async get(path) {
+    const r = await fetch(path);
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      throw new Error((body.error && body.error.message) || `HTTP ${r.status}`);
+    }
+    const body = await r.json();
+    if (body.error) throw new Error(body.error.message);
+    return body.data;
+  },
+  async postJSON(path, data) {
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data)
+    });
+    const ct = r.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      const body = await r.json();
+      if (body.error) throw new Error(body.error.message);
+      return body.data;
+    }
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r;
+  },
+  async postForm(path, formData) {
+    const r = await fetch(path, {
+      method: 'POST',
+      body: formData
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      throw new Error((body.error && body.error.message) || `HTTP ${r.status}`);
+    }
+    const body = await r.json();
+    if (body.error) throw new Error(body.error.message);
+    return body.data;
+  }
+};
+
+let allModels = [];
+let ttsModels = [];
+let asrModels = [];
+
+// Tab navigation
+document.querySelectorAll('[data-tab]').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('[data-tab]').forEach(a => a.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('tab-' + el.dataset.tab).classList.add('active');
+  });
+});
+
+// Dashboard
+async function loadDashboard() {
+  const statusEl = document.getElementById('dash-status');
+  const statsEl = document.getElementById('dash-stats');
+  statusEl.innerHTML = '<span class="spinner"></span>';
+  try {
+    const h = await API.get('/v1/health');
+    const alive = h.audiocpp_alive;
+    const statusClass = alive ? 'ok' : 'err';
+    const statusText = alive ? 'Running' : 'Disconnected';
+    const statusColor = alive ? 'badge-ok' : 'badge-error';
+    statusEl.innerHTML = `<span class="badge ${statusColor}" style="font-size:13px">${statusText}</span>` +
+      ` <span class="text-muted" style="font-size:12px;margin-left:8px">v${h.version}</span>` +
+      ` <span class="text-muted" style="font-size:12px;margin-left:8px">Uptime: ${fmtUptime(h.uptime_seconds)}</span>`;
+    statsEl.innerHTML = `
+      <div class="stat-card ${statusClass}">
+        <div class="value">${statusClass === 'ok' ? 'Online' : 'Offline'}</div>
+        <div class="label">audio.cpp Backend</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${h.models_count}</div>
+        <div class="label">Registered Models</div>
+      </div>
+      <div class="stat-card ${h.jobs_pending > 0 ? 'warn' : 'ok'}">
+        <div class="value">${h.jobs_pending}</div>
+        <div class="label">Pending Jobs</div>
+      </div>
+      <div class="stat-card ${h.jobs_running > 0 ? 'warn' : 'ok'}">
+        <div class="value">${h.jobs_running}</div>
+        <div class="label">Running Jobs</div>
+      </div>
+    `;
+  } catch (e) {
+    statusEl.innerHTML = `<span class="badge badge-error">Error</span> <span class="text-muted" style="font-size:13px;margin-left:8px">${e.message}</span>`;
+    statsEl.innerHTML = '';
+  }
+  loadCapabilities();
+}
+
+function fmtUptime(s) {
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  const parts = [];
+  if (d) parts.push(d + 'd');
+  if (h) parts.push(h + 'h');
+  if (m) parts.push(m + 'm');
+  parts.push(sec + 's');
+  return parts.join(' ');
+}
+
+async function loadCapabilities() {
+  try {
+    const caps = await API.get('/v1/capabilities');
+    const el = document.getElementById('dash-caps-list');
+    el.innerHTML = caps.map(c => `<span>${c.name}</span>`).join('');
+  } catch (e) {}
+}
+
+// Models
+async function loadModels() {
+  const el = document.getElementById('models-list');
+  try {
+    allModels = await API.get('/v1/models');
+    if (!allModels || allModels.length === 0) {
+      el.innerHTML = '<div class="empty-state"><h3>No models registered</h3><p>Register models in the runtime configuration</p></div>';
+      return;
+    }
+    el.innerHTML = '<div class="model-list">' + allModels.map(m => `
+      <div class="model-card">
+        <h3>${esc(m.name || m.id)}</h3>
+        <div class="detail">${esc(m.id)}</div>
+        ${m.task ? `<div class="detail">Task: ${esc(m.task)}</div>` : ''}
+        ${m.family ? `<div class="detail">Family: ${esc(m.family)}</div>` : ''}
+        ${m.backend ? `<div class="detail">Backend: ${esc(m.backend)}</div>` : ''}
+        ${m.format ? `<div class="detail">Format: ${esc(m.format)}</div>` : ''}
+        ${m.size ? `<div class="detail">Size: ${fmtSize(m.size)}</div>` : ''}
+        <div class="tags">
+          ${(m.capabilities || []).map(c => `<span>${esc(c)}</span>`).join('')}
+          ${(m.languages || []).map(l => `<span>${esc(l)}</span>`).join('')}
+          ${(m.voices || []).map(v => `<span>voice: ${esc(v)}</span>`).join('')}
+        </div>
+      </div>
+    `).join('') + '</div>';
+  } catch (e) {
+    el.innerHTML = `<div class="alert alert-error">Failed to load models: ${esc(e.message)}</div>`;
+  }
+}
+
+function fmtSize(bytes) {
+  if (!bytes) return '-';
+  const u = ['B','KB','MB','GB'];
+  let i = 0;
+  let v = bytes;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return v.toFixed(1) + ' ' + u[i];
+}
+
+// TTS
+async function loadModelsForTTS() {
+  await loadAllModels();
+  ttsModels = allModels.filter(m => (m.capabilities || []).includes('tts') || m.task === 'tts');
+  if (ttsModels.length === 0) ttsModels = allModels;
+  const sel = document.getElementById('tts-model');
+  sel.innerHTML = ttsModels.map(m => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join('');
+  if (ttsModels.length > 0) {
+    sel.value = ttsModels[0].id;
+    onTTSModelChange();
+  }
+}
+
+async function onTTSModelChange() {
+  const modelId = document.getElementById('tts-model').value;
+  const voiceSel = document.getElementById('tts-voice');
+  const langSel = document.getElementById('tts-language');
+  voiceSel.innerHTML = '<option value="">Default</option>';
+  langSel.innerHTML = '<option value="">Default</option>';
+  if (!modelId) return;
+  const model = allModels.find(m => m.id === modelId);
+  if (model) {
+    if (model.voices && model.voices.length > 0) {
+      voiceSel.innerHTML = '<option value="">Default</option>' + model.voices.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    }
+    if (model.languages && model.languages.length > 0) {
+      langSel.innerHTML = '<option value="">Default</option>' + model.languages.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+    }
+  }
+  try {
+    const voices = await API.get('/v1/voices?model_id=' + encodeURIComponent(modelId));
+    if (voices && voices.voices && voices.voices.length > 0) {
+      voiceSel.innerHTML = '<option value="">Default</option>' + voices.voices.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    }
+  } catch (e) {}
+}
+
+async function doTTS() {
+  const btn = document.getElementById('tts-btn');
+  const spinner = document.getElementById('tts-spinner');
+  const alertEl = document.getElementById('tts-alert');
+  const resultEl = document.getElementById('tts-result');
+  const audioEl = document.getElementById('tts-audio');
+  alertEl.innerHTML = '';
+  resultEl.classList.add('hidden');
+
+  const model = document.getElementById('tts-model').value;
+  const input = document.getElementById('tts-text').value.trim();
+  if (!model) { alertEl.innerHTML = '<div class="alert alert-error">Please select a model</div>'; return; }
+  if (!input) { alertEl.innerHTML = '<div class="alert alert-error">Please enter text to synthesize</div>'; return; }
+
+  const body = { model, input };
+  const voice = document.getElementById('tts-voice').value;
+  if (voice) body.voice = voice;
+  const lang = document.getElementById('tts-language').value;
+  if (lang) body.language = lang;
+  const fmt = document.getElementById('tts-response-format').value;
+  if (fmt) body.response_format = fmt;
+
+  const temp = parseFloat(document.getElementById('tts-temp').value);
+  if (!isNaN(temp)) body.temperature = temp;
+  const topk = parseInt(document.getElementById('tts-topk').value);
+  if (!isNaN(topk)) body.top_k = topk;
+  const topp = parseFloat(document.getElementById('tts-topp').value);
+  if (!isNaN(topp)) body.top_p = topp;
+  const seed = parseInt(document.getElementById('tts-seed').value);
+  if (!isNaN(seed)) body.seed = seed;
+  const maxt = parseInt(document.getElementById('tts-maxtokens').value);
+  if (!isNaN(maxt)) body.max_tokens = maxt;
+  const rp = parseFloat(document.getElementById('tts-reppen').value);
+  if (!isNaN(rp)) body.repetition_penalty = rp;
+
+  btn.disabled = true;
+  spinner.classList.remove('hidden');
+  try {
+    const resp = await API.postJSON('/v1/tts', body);
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    audioEl.src = url;
+    resultEl.classList.remove('hidden');
+    audioEl.play().catch(() => {});
+  } catch (e) {
+    alertEl.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    spinner.classList.add('hidden');
+  }
+}
+
+// ASR
+async function loadModelsForASR() {
+  await loadAllModels();
+  asrModels = allModels.filter(m => (m.capabilities || []).includes('asr') || m.task === 'asr');
+  if (asrModels.length === 0) asrModels = allModels;
+  const sel = document.getElementById('asr-model');
+  sel.innerHTML = asrModels.map(m => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join('');
+  const langSel = document.getElementById('asr-language');
+  const allLangs = new Set();
+  asrModels.forEach(m => (m.languages || []).forEach(l => allLangs.add(l)));
+  langSel.innerHTML = '<option value="">Auto-detect</option>' +
+    [...allLangs].sort().map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+}
+
+function onASRFileChange(input) {
+  const upload = document.getElementById('asr-file-upload');
+  const label = document.getElementById('asr-file-label');
+  if (input.files && input.files[0]) {
+    upload.classList.add('has-file');
+    label.innerHTML = `<strong>${esc(input.files[0].name)}</strong> (${fmtSize(input.files[0].size)})`;
+  } else {
+    upload.classList.remove('has-file');
+    label.innerHTML = '<strong>Click to select</strong> or drag audio file here';
+  }
+}
+
+async function doASR() {
+  const btn = document.getElementById('asr-btn');
+  const spinner = document.getElementById('asr-spinner');
+  const alertEl = document.getElementById('asr-alert');
+  const resultEl = document.getElementById('asr-result');
+  const textEl = document.getElementById('asr-text');
+  const timingEl = document.getElementById('asr-timing');
+  alertEl.innerHTML = '';
+  resultEl.classList.add('hidden');
+
+  const model = document.getElementById('asr-model').value;
+  const fileInput = document.getElementById('asr-file');
+  if (!model) { alertEl.innerHTML = '<div class="alert alert-error">Please select a model</div>'; return; }
+  if (!fileInput.files || !fileInput.files[0]) { alertEl.innerHTML = '<div class="alert alert-error">Please select an audio file</div>'; return; }
+
+  const fd = new FormData();
+  fd.append('model', model);
+  fd.append('file', fileInput.files[0]);
+  const lang = document.getElementById('asr-language').value;
+  if (lang) fd.append('language', lang);
+
+  btn.disabled = true;
+  spinner.classList.remove('hidden');
+  try {
+    const data = await API.postForm('/v1/asr', fd);
+    textEl.textContent = data.text || '(empty)';
+    resultEl.classList.remove('hidden');
+    if (data.timing) {
+      const t = data.timing;
+      timingEl.textContent = `Wall: ${t.wall_ms || '-'}ms | Audio: ${t.audio_duration_ms || '-'}ms | RTF: ${t.rtf || '-'} | TTFT: ${t.ttft_ms || '-'}ms`;
+    } else {
+      timingEl.textContent = '';
+    }
+  } catch (e) {
+    alertEl.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    spinner.classList.add('hidden');
+  }
+}
+
+// Jobs
+async function loadJobs() {
+  const wrapper = document.getElementById('jobs-table-wrapper');
+  try {
+    const jobs = await API.get('/v1/jobs');
+    if (!jobs || jobs.length === 0) {
+      wrapper.innerHTML = '<div class="empty-state"><h3>No jobs</h3><p>Submit a TTS or ASR job to see it here</p></div>';
+      return;
+    }
+    wrapper.innerHTML = `<table>
+      <thead><tr>
+        <th>ID</th>
+        <th>Type</th>
+        <th>Model</th>
+        <th>Status</th>
+        <th>Progress</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr></thead>
+      <tbody>${jobs.map(j => {
+        const statusClass = badgeClass(j.status);
+        const prog = (j.progress || 0) * 100;
+        const isTerminal = ['completed','failed','cancelled'].includes(j.status);
+        return `<tr>
+          <td class="mono">${esc(shortID(j.id))}</td>
+          <td>${esc(j.type)}</td>
+          <td class="mono">${esc(j.model_id)}</td>
+          <td><div class="job-status"><span class="badge ${statusClass}">${esc(j.status)}</span></div></td>
+          <td><div class="progress-bar"><div class="fill ${statusClass}" style="width:${Math.round(prog)}%"></div></div></td>
+          <td style="font-size:12px;color:#8b949e">${fmtTime(j.created_at)}</td>
+          <td>${isTerminal ? '<span class="text-muted" style="font-size:12px">—</span>' :
+            `<button class="btn btn-sm btn-danger" onclick="cancelJob('${esc(j.id)}')">Cancel</button>`}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+  } catch (e) {
+    wrapper.innerHTML = `<div class="alert alert-error">Failed to load jobs: ${esc(e.message)}</div>`;
+  }
+}
+
+async function cancelJob(id) {
+  if (!confirm('Cancel job ' + id + '?')) return;
+  try {
+    await API.postJSON('/v1/jobs/' + encodeURIComponent(id) + '/cancel', {});
+    loadJobs();
+  } catch (e) {
+    alert('Failed to cancel job: ' + e.message);
+  }
+}
+
+function badgeClass(status) {
+  switch ((status || '').toLowerCase()) {
+    case 'ok': case 'completed': case 'success': return 'badge-completed';
+    case 'running': case 'processing': return 'badge-running';
+    case 'queued': case 'pending': return 'badge-queued';
+    case 'error': case 'failed': return 'badge-failed';
+    case 'cancelled': return 'badge-cancelled';
+    default: return 'badge-queued';
+  }
+}
+
+function shortID(id) { return id ? id.slice(0, 8) + '…' : '-'; }
+
+function fmtTime(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  return d.toLocaleString();
+}
+
+// Shared helpers
+function esc(s) {
+  if (typeof s !== 'string') return String(s);
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+let modelsLoading = false;
+
+async function loadAllModels() {
+  if (allModels.length > 0) return;
+  if (modelsLoading) return;
+  modelsLoading = true;
+  try {
+    allModels = await API.get('/v1/models');
+  } catch (e) {
+    allModels = [];
+  } finally {
+    modelsLoading = false;
+  }
+}
+
+// Init
+(async function init() {
+  try {
+    await Promise.all([loadModelsForTTS(), loadModelsForASR()]);
+  } catch (e) {}
+  loadDashboard();
+  loadJobs();
+})();
+</script>
+</body>
+</html>
