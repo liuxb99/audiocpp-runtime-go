@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/liuxb99/audiocpp-runtime-go/internal/platform"
 )
 
 func TestMain(m *testing.M) {
@@ -272,14 +274,14 @@ func TestProcessNoOrphanAfterStop(t *testing.T) {
 		t.Fatalf("Stop: %v", err)
 	}
 
-	process, err := os.FindProcess(pid)
-	if err == nil {
-		// On Windows, os.FindProcess always succeeds.
-		// Try to signal the process — if it's gone, this will error.
-		if err := process.Signal(os.Interrupt); err == nil {
-			t.Logf("PID %d still exists after Stop (expected on some platforms)", pid)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if !platform.ProcessExists(pid) {
+			return
 		}
+		time.Sleep(200 * time.Millisecond)
 	}
+	t.Fatalf("child process %d still exists after Stop", pid)
 }
 
 func TestProcessMaxRestarts(t *testing.T) {

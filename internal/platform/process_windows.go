@@ -9,13 +9,14 @@ import (
 )
 
 var (
-	modkernel32         = syscall.NewLazyDLL("kernel32.dll")
-	procCreateJobObject = modkernel32.NewProc("CreateJobObjectW")
-	procAssignProcess   = modkernel32.NewProc("AssignProcessToJobObject")
-	procTerminateJob    = modkernel32.NewProc("TerminateJobObject")
-	procCloseHandle     = modkernel32.NewProc("CloseHandle")
-	procOpenProcess     = modkernel32.NewProc("OpenProcess")
-	procSetInformation  = modkernel32.NewProc("SetInformationJobObject")
+	modkernel32            = syscall.NewLazyDLL("kernel32.dll")
+	procCreateJobObject    = modkernel32.NewProc("CreateJobObjectW")
+	procAssignProcess      = modkernel32.NewProc("AssignProcessToJobObject")
+	procTerminateJob       = modkernel32.NewProc("TerminateJobObject")
+	procCloseHandle        = modkernel32.NewProc("CloseHandle")
+	procOpenProcess        = modkernel32.NewProc("OpenProcess")
+	procSetInformation     = modkernel32.NewProc("SetInformationJobObject")
+	procGetExitCodeProcess = modkernel32.NewProc("GetExitCodeProcess")
 )
 
 const (
@@ -107,6 +108,23 @@ func SetProcessGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: 0x00000200, // CREATE_NEW_PROCESS_GROUP
 	}
+}
+
+func ProcessExists(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	handle, _, _ := procOpenProcess.Call(PROCESS_QUERY_INFORMATION, 0, uintptr(pid))
+	if handle == 0 {
+		return false
+	}
+	defer procCloseHandle.Call(handle)
+	var exitCode uint32
+	ret, _, _ := procGetExitCodeProcess.Call(handle, uintptr(unsafe.Pointer(&exitCode)))
+	if ret == 0 {
+		return false
+	}
+	return exitCode == 259 // STILL_ACTIVE
 }
 
 func FindExecutable(name string) string {

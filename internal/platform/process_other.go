@@ -3,7 +3,9 @@
 package platform
 
 import (
+	"os"
 	"os/exec"
+	"syscall"
 )
 
 func KillProcessTree(pid int) error {
@@ -26,4 +28,15 @@ func FindExecutable(name string) string {
 		return ""
 	}
 	return path
+}
+
+func ProcessExists(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return process.Signal(syscall.Signal(0)) == nil
 }
