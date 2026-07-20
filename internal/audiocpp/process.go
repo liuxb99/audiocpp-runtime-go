@@ -37,12 +37,14 @@ type VoicePreset struct {
 }
 
 type ServerConfigJSON struct {
-	Host    string              `json:"host"`
-	Port    int                 `json:"port"`
-	Backend string              `json:"backend"`
-	Device  int                 `json:"device"`
-	Threads int                 `json:"threads"`
-	Models  []ServerModelConfig `json:"models"`
+	Host              string              `json:"host"`
+	Port              int                 `json:"port"`
+	Backend           string              `json:"backend"`
+	Device            int                 `json:"device"`
+	Threads           int                 `json:"threads"`
+	LazyLoad          bool                `json:"lazy_load,omitempty"`
+	ModelSpecOverride string              `json:"model_spec_override,omitempty"`
+	Models            []ServerModelConfig `json:"models"`
 }
 
 type ProcessState int32
@@ -68,17 +70,18 @@ type generation struct {
 }
 
 type Process struct {
-	cfgDir      string
-	serverPath  string
-	workingDir  string
-	host        string
-	port        int
-	backend     string
-	device      int
-	threads     int
-	maxRestarts int
-	autoRestart bool
-	configPath  string
+	cfgDir            string
+	serverPath        string
+	workingDir        string
+	host              string
+	port              int
+	backend           string
+	device            int
+	threads           int
+	maxRestarts       int
+	autoRestart       bool
+	configPath        string
+	modelSpecOverride string
 
 	config     *ServerConfigJSON
 	configLock sync.Mutex
@@ -115,16 +118,22 @@ func NewProcess(cfgDir, serverPath, workingDir, host string, port, device, threa
 	return p
 }
 
+func (p *Process) SetModelSpecOverride(path string) {
+	p.modelSpecOverride = path
+}
+
 func (p *Process) SetModelConfig(models []ServerModelConfig) {
 	p.configLock.Lock()
 	defer p.configLock.Unlock()
 	p.config = &ServerConfigJSON{
-		Host:    p.host,
-		Port:    p.port,
-		Backend: p.backend,
-		Device:  p.device,
-		Threads: p.threads,
-		Models:  models,
+		Host:              p.host,
+		Port:              p.port,
+		Backend:           p.backend,
+		Device:            p.device,
+		Threads:           p.threads,
+		LazyLoad:          false,
+		ModelSpecOverride: p.modelSpecOverride,
+		Models:            models,
 	}
 }
 

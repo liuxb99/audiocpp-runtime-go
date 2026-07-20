@@ -1,0 +1,18 @@
+{
+  "host": "127.0.0.1",
+  "port": 8092,
+  "backend": "cpu",
+  "device": 0,
+  "threads": 1,
+  "lazy_load": false,
+  "model_spec_override": "D:/AI-Tools/audio-cpp-runtime-go/audio.cpp/model_specs",
+  "models": [
+    {
+      "id": "citrinet-asr",
+      "family": "citrinet_asr",
+      "path": "D:/AI-Tools/audio-cpp-runtime-go/audio.cpp/models/citrinet",
+      "task": "asr",
+      "mode": "offline"
+    }
+  ]
+}
