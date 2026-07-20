@@ -51,8 +51,8 @@ jobs:
 
       - name: Build (no CGO)
         shell: bash
-        run: go build $(go list ./... | grep -v -E '/storage|/runtime|/outputs|/jobs|/tests|/cmd/audiocpp-runtime')
+        run: go build $(go list ./... | grep -v -E '/internal/storage|/internal/runtime|/internal/outputs|/internal/jobs|/internal/api|/tests|/cmd/audiocpp-runtime')
 
       - name: Test (no CGO)
         shell: bash
-        run: go test -count=1 $(go list ./... | grep -v -E '/storage|/runtime|/outputs|/jobs|/tests|/cmd/audiocpp-runtime')
+        run: go test -count=1 $(go list ./... | grep -v -E '/internal/storage|/internal/runtime|/internal/outputs|/internal/jobs|/internal/api|/tests|/cmd/audiocpp-runtime')

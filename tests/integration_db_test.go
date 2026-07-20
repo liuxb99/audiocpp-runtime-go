@@ -81,10 +81,13 @@ func newTestHarness(t *testing.T) (*api.Server, *fakeAudioCppServer, *storage.DB
 }
 
 func TestHealthEndpoint(t *testing.T) {
-	_, fake, _, cleanup := newTestHarness(t)
+	srv, _, _, cleanup := newTestHarness(t)
 	defer cleanup()
 
-	resp, err := http.Get(fake.URL + "/v1/health")
+	ts := httptest.NewServer(srv.Router())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/v1/health")
 	if err != nil {
 		t.Fatalf("GET /v1/health: %v", err)
 	}
