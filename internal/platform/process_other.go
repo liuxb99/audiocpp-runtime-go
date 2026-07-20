@@ -3,13 +3,17 @@
 package platform
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"syscall"
 )
 
 func KillProcessTree(pid int) error {
-	return nil
+	if pid <= 0 {
+		return errors.New("invalid process id")
+	}
+	return syscall.Kill(pid, syscall.SIGKILL)
 }
 
 func SetProcessGroup(cmd *exec.Cmd) {

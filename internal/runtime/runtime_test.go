@@ -80,6 +80,7 @@ func testConfig(t *testing.T, port int) *config.Config {
 	cfg.AudioCpp.Device = 0
 	cfg.AudioCpp.Threads = 1
 	cfg.AudioCpp.AutoRestart = false
+	cfg.AudioCpp.WorkingDir = ""
 	cfg.AudioCpp.StartupTimeoutSec = 10
 	cfg.AudioCpp.RequestTimeoutSec = 30
 	cfg.Server.Port = port + 1
