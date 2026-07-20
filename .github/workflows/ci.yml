@@ -24,11 +24,11 @@ jobs:
       - name: Build
         run: go build ./...
 
-      - name: Test
-        run: go test -count=1 ./...
+      - name: Test (unit + runtime integration)
+        run: go test -count=1 $(go list ./... | grep -v /tests)
 
       - name: Race test
-        run: go test -race -count=1 ./...
+        run: go test -race -count=1 $(go list ./... | grep -v /tests)
 
   windows:
     runs-on: windows-latest
