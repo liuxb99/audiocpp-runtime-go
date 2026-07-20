@@ -2,6 +2,7 @@ package platform
 
 import (
 	"errors"
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"syscall"
@@ -59,46 +60,43 @@ func KillProcessTree(pid int) error {
 		return errors.New("invalid process id")
 	}
 
-	procHandle, _, err := procOpenProcess.Call(
+	// Try job object approach first (most thorough)
+	procHandle, _, _ := procOpenProcess.Call(
 		PROCESS_CREATE_PROCESS|PROCESS_TERMINATE|PROCESS_QUERY_INFORMATION|SYNCHRONIZE,
 		0,
 		uintptr(pid),
 	)
-	if procHandle == 0 {
-		return err
-	}
-	defer procCloseHandle.Call(procHandle)
+	if procHandle != 0 {
+		defer procCloseHandle.Call(procHandle)
 
-	jobHandle, _, err := procCreateJobObject.Call(0, 0)
-	if jobHandle == 0 {
-		return err
-	}
-	defer procCloseHandle.Call(jobHandle)
+		jobHandle, _, _ := procCreateJobObject.Call(0, 0)
+		if jobHandle != 0 {
+			defer procCloseHandle.Call(jobHandle)
 
-	info := &jobObjectExtendedLimitInformation{}
-	info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+			info := &jobObjectExtendedLimitInformation{}
+			info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
 
-	r1, _, err := procSetInformation.Call(
-		jobHandle,
-		JobObjectExtendedLimitInformation,
-		uintptr(unsafe.Pointer(info)),
-		unsafe.Sizeof(*info),
-	)
-	if r1 == 0 {
-		return err
-	}
-
-	r1, _, err = procAssignProcess.Call(jobHandle, procHandle)
-	if r1 == 0 {
-		return err
-	}
-
-	r1, _, err = procTerminateJob.Call(jobHandle, 1)
-	if r1 == 0 {
-		return err
+			r1, _, _ := procSetInformation.Call(
+				jobHandle,
+				JobObjectExtendedLimitInformation,
+				uintptr(unsafe.Pointer(info)),
+				unsafe.Sizeof(*info),
+			)
+			if r1 != 0 {
+				r1, _, _ = procAssignProcess.Call(jobHandle, procHandle)
+				if r1 != 0 {
+					r1, _, _ = procTerminateJob.Call(jobHandle, 1)
+					if r1 != 0 {
+						return nil
+					}
+				}
+			}
+		}
 	}
 
-	return nil
+	// Fallback: use taskkill /F /T to force-kill the process tree
+	kill := exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", pid))
+	return kill.Run()
 }
 
 func SetProcessGroup(cmd *exec.Cmd) {
