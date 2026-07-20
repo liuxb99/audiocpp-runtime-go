@@ -31,8 +31,10 @@ type Runtime struct {
 	jobMgr     *jobs.Manager
 	workerPool *jobs.WorkerPool
 
-	startTime time.Time
-	stopped   bool
+	lifetimeCtx context.Context
+	lifetimeCnl context.CancelFunc
+	startTime   time.Time
+	started     bool
 }
 
 func New(cfg *config.Config) *Runtime {
@@ -79,11 +81,13 @@ func (r *Runtime) Init(ctx context.Context) error {
 		r.cfg.AudioCpp.Host,
 		r.cfg.AudioCpp.Port,
 		r.cfg.AudioCpp.Device,
-		1, // threads (default)
+		r.cfg.AudioCpp.Threads,
 		r.cfg.AudioCpp.Backend,
 		r.cfg.AudioCpp.AutoRestart,
 		r.cfg.AudioCpp.MaxRestartAttempts,
 	)
+
+	r.lifetimeCtx, r.lifetimeCnl = context.WithCancel(ctx)
 
 	log.Printf("[runtime] initialization complete")
 	return nil
@@ -95,20 +99,19 @@ func (r *Runtime) StartAudioCpp(ctx context.Context) error {
 	}
 
 	log.Printf("[runtime] starting audiocpp server")
-	if err := r.proc.Start(ctx); err != nil {
+	if err := r.proc.Start(r.lifetimeCtx); err != nil {
 		return fmt.Errorf("start audiocpp server: %w", err)
 	}
 
-	readyCtx, cancel := context.WithTimeout(ctx,
+	readyCtx, cancel := context.WithTimeout(r.lifetimeCtx,
 		time.Duration(r.cfg.AudioCpp.StartupTimeoutSec)*time.Second)
 	defer cancel()
 
-	if err := audiocpp.WaitForServer(readyCtx, r.cfg.AudioCpp.Host, r.cfg.AudioCpp.Port,
+	if err := r.proc.WaitForReady(readyCtx,
 		time.Duration(r.cfg.AudioCpp.StartupTimeoutSec)*time.Second); err != nil {
 		return fmt.Errorf("audiocpp server not ready: %w", err)
 	}
 
-	r.proc.MarkReady()
 	log.Printf("[runtime] audiocpp server is ready")
 
 	if err := r.modelReg.Refresh(ctx, r.client); err != nil {
@@ -121,6 +124,7 @@ func (r *Runtime) StartAudioCpp(ctx context.Context) error {
 func (r *Runtime) StartWorkers(count int) {
 	r.workerPool = jobs.NewWorkerPool(r.jobMgr, r.client, count)
 	r.workerPool.Start()
+	r.started = true
 }
 
 func (r *Runtime) StopWorkers() {
@@ -133,11 +137,6 @@ func (r *Runtime) Shutdown(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.stopped {
-		return nil
-	}
-	r.stopped = true
-
 	log.Printf("[runtime] shutting down")
 
 	if r.workerPool != nil {
@@ -149,6 +148,8 @@ func (r *Runtime) Shutdown(ctx context.Context) error {
 			log.Printf("[runtime] error stopping audiocpp: %v", err)
 		}
 	}
+
+	r.lifetimeCnl()
 
 	if r.modelReg != nil {
 		if err := r.modelReg.Save(); err != nil {

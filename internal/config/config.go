@@ -18,6 +18,7 @@ type AudioCppConfig struct {
 	WorkingDir         string `yaml:"working_dir"`
 	Backend            string `yaml:"backend"`
 	Device             int    `yaml:"device"`
+	Threads            int    `yaml:"threads"`
 	Host               string `yaml:"host"`
 	Port               int    `yaml:"port"`
 	StartupTimeoutSec  int    `yaml:"startup_timeout_seconds"`
@@ -66,6 +67,7 @@ func DefaultConfig() *Config {
 			WorkingDir:         "runtime/audio.cpp",
 			Backend:            "cuda",
 			Device:             0,
+			Threads:            1,
 			Host:               "127.0.0.1",
 			Port:               8092,
 			StartupTimeoutSec:  120,

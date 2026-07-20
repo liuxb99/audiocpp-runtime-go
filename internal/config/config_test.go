@@ -46,6 +46,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.AudioCpp.MaxRestartAttempts != 5 {
 		t.Errorf("expected AudioCpp.MaxRestartAttempts 5, got %d", cfg.AudioCpp.MaxRestartAttempts)
 	}
+	if cfg.AudioCpp.Threads != 1 {
+		t.Errorf("expected AudioCpp.Threads 1, got %d", cfg.AudioCpp.Threads)
+	}
 
 	if cfg.Storage.SqlitePath != "data/runtime.db" {
 		t.Errorf("unexpected Storage.SqlitePath: %q", cfg.Storage.SqlitePath)

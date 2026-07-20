@@ -55,28 +55,41 @@ const (
 	StateCrashed  ProcessState = 4
 )
 
-type Process struct {
-	serverPath string
-	workingDir string
-	host       string
-	port       int
-	backend    string
-	device     int
-	threads    int
-
-	config       *ServerConfigJSON
-	configPath   string
-	restartCount int
-	maxRestarts  int
-	autoRestart  bool
-
-	mu     sync.Mutex
+type generation struct {
 	cmd    *exec.Cmd
-	state  atomic.Int32
 	stopCh chan struct{}
 	doneCh chan struct{}
+	cancel context.CancelFunc
 	stdout io.ReadCloser
 	stderr io.ReadCloser
+	pid    int
+	exited atomic.Bool
+	state  atomic.Int32
+}
+
+type Process struct {
+	cfgDir      string
+	serverPath  string
+	workingDir  string
+	host        string
+	port        int
+	backend     string
+	device      int
+	threads     int
+	maxRestarts int
+	autoRestart bool
+	configPath  string
+
+	config     *ServerConfigJSON
+	configLock sync.Mutex
+
+	genMu        sync.Mutex
+	current      *generation
+	restartCount int
+	stopping     atomic.Bool
+	state        atomic.Int32
+
+	ExtraEnv []string
 }
 
 func NewProcess(cfgDir, serverPath, workingDir, host string, port, device, threads int, backend string, autoRestart bool, maxRestarts int) *Process {
@@ -86,6 +99,7 @@ func NewProcess(cfgDir, serverPath, workingDir, host string, port, device, threa
 	}
 
 	p := &Process{
+		cfgDir:      cfgDir,
 		serverPath:  serverPath,
 		workingDir:  workingDir,
 		host:        host,
@@ -93,19 +107,17 @@ func NewProcess(cfgDir, serverPath, workingDir, host string, port, device, threa
 		backend:     backend,
 		device:      device,
 		threads:     threads,
-		configPath:  configPath,
 		maxRestarts: maxRestarts,
 		autoRestart: autoRestart,
-		stopCh:      make(chan struct{}),
-		doneCh:      make(chan struct{}),
+		configPath:  configPath,
 	}
 	p.state.Store(int32(StateStopped))
 	return p
 }
 
 func (p *Process) SetModelConfig(models []ServerModelConfig) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.configLock.Lock()
+	defer p.configLock.Unlock()
 	p.config = &ServerConfigJSON{
 		Host:    p.host,
 		Port:    p.port,
@@ -116,133 +128,115 @@ func (p *Process) SetModelConfig(models []ServerModelConfig) {
 	}
 }
 
-func (p *Process) Start(ctx context.Context) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.state.Load() != int32(StateStopped) && p.state.Load() != int32(StateCrashed) {
-		return fmt.Errorf("process already running (state=%d)", p.state.Load())
+func (p *Process) Start(lifetimeCtx context.Context) error {
+	if lifetimeCtx == nil {
+		return fmt.Errorf("lifetime context must not be nil")
 	}
 
-	configData, err := json.MarshalIndent(p.config, "", "  ")
+	p.genMu.Lock()
+	defer p.genMu.Unlock()
+
+	if p.current != nil && !p.current.exited.Load() {
+		return fmt.Errorf("already running")
+	}
+
+	p.restartCount = 0
+	p.stopping.Store(false)
+
+	gen, err := p.newGeneration(lifetimeCtx)
 	if err != nil {
-		return fmt.Errorf("marshal config: %w", err)
+		return fmt.Errorf("create generation: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(p.configPath), 0755); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
-	}
-
-	if err := os.WriteFile(p.configPath, configData, 0644); err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
-
-	log.Printf("[audiocpp] starting server: %s --config %s --host %s --port %d --backend %s --device %d --threads %d",
-		p.serverPath, p.configPath, p.host, p.port, p.backend, p.device, p.threads)
-
-	args := []string{
-		"--config", p.configPath,
-		"--host", p.host,
-		"--port", strconv.Itoa(p.port),
-		"--backend", p.backend,
-		"--device", strconv.Itoa(p.device),
-		"--threads", strconv.Itoa(p.threads),
-	}
-
-	cmd := exec.CommandContext(ctx, p.serverPath, args...)
-	if p.workingDir != "" {
-		cmd.Dir = p.workingDir
-	}
-
-	platform.SetProcessGroup(cmd)
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("create stdout pipe: %w", err)
-	}
-	p.stdout = stdout
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("create stderr pipe: %w", err)
-	}
-	p.stderr = stderr
-
-	if err := cmd.Start(); err != nil {
-		p.state.Store(int32(StateCrashed))
+	if err := gen.cmd.Start(); err != nil {
 		return fmt.Errorf("start process: %w", err)
 	}
-
-	p.cmd = cmd
+	gen.pid = gen.cmd.Process.Pid
+	gen.state.Store(int32(StateStarting))
 	p.state.Store(int32(StateStarting))
 
-	go p.monitorOutput(stdout, stderr)
-	go p.monitorProcess(ctx)
+	log.Printf("[audiocpp] started server (pid=%d)", gen.pid)
+	p.current = gen
+
+	go p.monitorOutput(gen.stdout, gen.stderr)
+	go p.supervise(lifetimeCtx, gen)
 
 	return nil
 }
 
 func (p *Process) WaitForReady(ctx context.Context, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		state := ProcessState(p.state.Load())
-		if state == StateRunning {
-			return nil
-		}
-		if state == StateCrashed || state == StateStopped {
-			return fmt.Errorf("process stopped unexpectedly during startup")
-		}
-
-		time.Sleep(200 * time.Millisecond)
+	err := WaitForServer(ctx, p.host, p.port, timeout)
+	if err != nil {
+		p.Stop()
+		return fmt.Errorf("server not ready: %w", err)
 	}
-	return fmt.Errorf("timeout waiting for server to become ready")
-}
 
-func (p *Process) MarkReady() {
+	gen := p.getCurrentGen()
+	if gen != nil {
+		gen.state.Store(int32(StateRunning))
+	}
 	p.state.Store(int32(StateRunning))
+	return nil
 }
 
 func (p *Process) Stop() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.stopping.Store(true)
 
-	state := ProcessState(p.state.Load())
-	if state == StateStopped {
+	p.genMu.Lock()
+	gen := p.current
+	p.current = nil
+	p.genMu.Unlock()
+
+	if gen == nil {
 		return nil
 	}
 
-	p.state.Store(int32(StateStopping))
-
-	if p.cmd != nil && p.cmd.Process != nil {
-		log.Printf("[audiocpp] stopping server (pid=%d)", p.cmd.Process.Pid)
-		if err := platform.KillProcessTree(p.cmd.Process.Pid); err != nil {
+	if gen.cmd != nil && gen.cmd.Process != nil {
+		log.Printf("[audiocpp] stopping server (pid=%d)", gen.pid)
+		if err := platform.KillProcessTree(gen.pid); err != nil {
 			log.Printf("[audiocpp] kill process tree error: %v", err)
 		}
 	}
 
-	close(p.stopCh)
-	<-p.doneCh
+	select {
+	case <-gen.stopCh:
+	default:
+		close(gen.stopCh)
+	}
+
+	tctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	select {
+	case <-gen.doneCh:
+	case <-tctx.Done():
+		log.Printf("[audiocpp] stop timeout waiting for supervisor")
+	}
 
 	p.state.Store(int32(StateStopped))
 	return nil
 }
 
-func (p *Process) Restart(ctx context.Context) error {
+func (p *Process) Restart(lifetimeCtx context.Context) error {
 	log.Printf("[audiocpp] restarting server")
 	if err := p.Stop(); err != nil {
 		log.Printf("[audiocpp] stop error during restart: %v", err)
 	}
 
-	restartCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+	if err := p.Start(lifetimeCtx); err != nil {
+		return fmt.Errorf("restart start failed: %w", err)
+	}
 
-	return p.Start(restartCtx)
+	startupCtx, cancel := context.WithTimeout(lifetimeCtx, 30*time.Second)
+	defer cancel()
+	return p.WaitForReady(startupCtx, 30*time.Second)
+}
+
+func (p *Process) MarkReady() {
+	gen := p.getCurrentGen()
+	if gen != nil {
+		gen.state.Store(int32(StateRunning))
+	}
+	p.state.Store(int32(StateRunning))
 }
 
 func (p *Process) State() ProcessState {
@@ -255,6 +249,167 @@ func (p *Process) IsRunning() bool {
 
 func (p *Process) ConfigPath() string {
 	return p.configPath
+}
+
+func (p *Process) Pid() int {
+	gen := p.getCurrentGen()
+	if gen != nil {
+		return gen.pid
+	}
+	return 0
+}
+
+func (p *Process) getCurrentGen() *generation {
+	p.genMu.Lock()
+	defer p.genMu.Unlock()
+	return p.current
+}
+
+func (p *Process) newGeneration(lifetimeCtx context.Context) (*generation, error) {
+	p.configLock.Lock()
+	config := p.config
+	p.configLock.Unlock()
+
+	if config == nil {
+		return nil, fmt.Errorf("model config not set, call SetModelConfig first")
+	}
+
+	configData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal config: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(p.configPath), 0755); err != nil {
+		return nil, fmt.Errorf("create config dir: %w", err)
+	}
+
+	if err := os.WriteFile(p.configPath, configData, 0644); err != nil {
+		return nil, fmt.Errorf("write config: %w", err)
+	}
+
+	args := []string{
+		"--config", p.configPath,
+		"--host", p.host,
+		"--port", strconv.Itoa(p.port),
+		"--backend", p.backend,
+		"--device", strconv.Itoa(p.device),
+		"--threads", strconv.Itoa(p.threads),
+	}
+
+	genCtx, genCancel := context.WithCancel(lifetimeCtx)
+	cmd := exec.CommandContext(genCtx, p.serverPath, args...)
+	if p.workingDir != "" {
+		cmd.Dir = p.workingDir
+	}
+
+	platform.SetProcessGroup(cmd)
+
+	if len(p.ExtraEnv) > 0 {
+		cmd.Env = append(os.Environ(), p.ExtraEnv...)
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		genCancel()
+		return nil, fmt.Errorf("create stdout pipe: %w", err)
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		genCancel()
+		return nil, fmt.Errorf("create stderr pipe: %w", err)
+	}
+
+	return &generation{
+		cmd:    cmd,
+		stopCh: make(chan struct{}),
+		doneCh: make(chan struct{}),
+		cancel: genCancel,
+		stdout: stdout,
+		stderr: stderr,
+	}, nil
+}
+
+func (p *Process) supervise(ctx context.Context, gen *generation) {
+	defer close(gen.doneCh)
+
+	procDone := make(chan error, 1)
+	go func() {
+		procDone <- gen.cmd.Wait()
+	}()
+
+	select {
+	case <-gen.stopCh:
+		<-procDone
+		return
+
+	case <-procDone:
+		gen.exited.Store(true)
+
+		select {
+		case <-gen.stopCh:
+			return
+		default:
+		}
+
+		if ctx.Err() != nil {
+			p.state.Store(int32(StateStopped))
+			return
+		}
+
+		p.genMu.Lock()
+		isCurrent := p.current == gen
+		p.genMu.Unlock()
+
+		if !isCurrent || p.stopping.Load() {
+			return
+		}
+
+		if p.autoRestart && p.restartCount < p.maxRestarts {
+			log.Printf("[audiocpp] server exited, auto-restart (%d/%d)",
+				p.restartCount+1, p.maxRestarts)
+
+			newGen, err := p.newGeneration(ctx)
+			if err != nil {
+				log.Printf("[audiocpp] auto-restart create generation failed: %v", err)
+				p.state.Store(int32(StateCrashed))
+				return
+			}
+
+			if err := newGen.cmd.Start(); err != nil {
+				log.Printf("[audiocpp] auto-restart start failed: %v", err)
+				close(newGen.doneCh)
+				p.state.Store(int32(StateCrashed))
+				return
+			}
+			newGen.pid = newGen.cmd.Process.Pid
+			newGen.state.Store(int32(StateStarting))
+
+			go p.monitorOutput(newGen.stdout, newGen.stderr)
+
+			p.genMu.Lock()
+			if p.stopping.Load() || p.current != gen {
+				log.Printf("[audiocpp] auto-restart aborted by Stop")
+				p.genMu.Unlock()
+				platform.KillProcessTree(newGen.pid)
+				close(newGen.doneCh)
+				if !p.stopping.Load() {
+					p.state.Store(int32(StateStopped))
+				}
+				return
+			}
+			p.restartCount++
+			p.current = newGen
+			p.genMu.Unlock()
+
+			log.Printf("[audiocpp] auto-restart succeeded (pid=%d)", newGen.pid)
+			p.supervise(ctx, newGen)
+			return
+		}
+
+		p.state.Store(int32(StateCrashed))
+		log.Printf("[audiocpp] server exited, no more restarts")
+	}
 }
 
 func (p *Process) monitorOutput(stdout, stderr io.ReadCloser) {
@@ -283,44 +438,4 @@ func (p *Process) monitorOutput(stdout, stderr io.ReadCloser) {
 			}
 		}
 	}()
-}
-
-func (p *Process) monitorProcess(ctx context.Context) {
-	defer func() {
-		p.doneCh <- struct{}{}
-	}()
-
-	err := p.cmd.Wait()
-	if err != nil {
-		if ctx.Err() != nil {
-			log.Printf("[audiocpp] server process terminated (context cancelled)")
-			return
-		}
-		log.Printf("[audiocpp] server process exited: %v", err)
-	}
-
-	state := ProcessState(p.state.Load())
-	if state == StateStopping || state == StateStopped {
-		return
-	}
-
-	p.state.Store(int32(StateCrashed))
-	log.Printf("[audiocpp] server process crashed")
-
-	if p.autoRestart && p.restartCount < p.maxRestarts {
-		p.restartCount++
-		log.Printf("[audiocpp] auto-restart attempt %d/%d", p.restartCount, p.maxRestarts)
-		if err := p.Restart(ctx); err != nil {
-			log.Printf("[audiocpp] auto-restart failed: %v", err)
-		}
-	}
-}
-
-func (p *Process) Pid() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.cmd != nil && p.cmd.Process != nil {
-		return p.cmd.Process.Pid
-	}
-	return 0
 }
