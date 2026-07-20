@@ -8,6 +8,7 @@ bin/
 # Data
 data/
 outputs/
+!internal/outputs/
 models/*.gguf
 models/*.safetensors
 
