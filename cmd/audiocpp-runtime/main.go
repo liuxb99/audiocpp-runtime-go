@@ -52,7 +52,7 @@ func main() {
 
 	rt.StartWorkers(cfg.Jobs.Workers)
 
-	apiServer := api.NewServer(cfg, rt.Client(), rt.JobManager(), rt.ModelRegistry(), rt.OutputManager())
+	apiServer := api.NewServer(cfg, rt.Client(), rt.Process(), rt.JobManager(), rt.ModelRegistry(), rt.OutputManager())
 
 	go func() {
 		if err := apiServer.Start(); err != nil && err != http.ErrServerClosed {

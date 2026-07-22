@@ -20,10 +20,33 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	uptime := time.Since(s.startTime).Seconds()
 
+	var audiocppState string
+	audiocppPID := 0
+	if s.process != nil {
+		audiocppPID = s.process.Pid()
+		state := s.process.State()
+		switch state {
+		case 0:
+			audiocppState = "stopped"
+		case 1:
+			audiocppState = "starting"
+		case 2:
+			audiocppState = "running"
+		case 3:
+			audiocppState = "stopping"
+		case 4:
+			audiocppState = "crashed"
+		default:
+			audiocppState = "unknown"
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":         "ok",
 		"version":        "1.0.0",
 		"audiocpp_alive": alive,
+		"audiocpp_state": audiocppState,
+		"audiocpp_pid":   audiocppPID,
 		"models_count":   modelsCount,
 		"jobs_pending":   len(pendingJobs),
 		"jobs_running":   len(runningJobs),

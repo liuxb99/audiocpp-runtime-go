@@ -42,7 +42,7 @@ type ServerConfigJSON struct {
 	Backend           string              `json:"backend"`
 	Device            int                 `json:"device"`
 	Threads           int                 `json:"threads"`
-	LazyLoad          bool                `json:"lazy_load,omitempty"`
+	LazyLoad          bool                `json:"lazy_load"`
 	ModelSpecOverride string              `json:"model_spec_override,omitempty"`
 	Models            []ServerModelConfig `json:"models"`
 }
@@ -82,6 +82,7 @@ type Process struct {
 	autoRestart       bool
 	configPath        string
 	modelSpecOverride string
+	lazyLoad          bool
 
 	config     *ServerConfigJSON
 	configLock sync.Mutex
@@ -122,6 +123,10 @@ func (p *Process) SetModelSpecOverride(path string) {
 	p.modelSpecOverride = path
 }
 
+func (p *Process) SetLazyLoad(v bool) {
+	p.lazyLoad = v
+}
+
 func (p *Process) SetModelConfig(models []ServerModelConfig) {
 	p.configLock.Lock()
 	defer p.configLock.Unlock()
@@ -131,7 +136,7 @@ func (p *Process) SetModelConfig(models []ServerModelConfig) {
 		Backend:           p.backend,
 		Device:            p.device,
 		Threads:           p.threads,
-		LazyLoad:          false,
+		LazyLoad:          p.lazyLoad,
 		ModelSpecOverride: p.modelSpecOverride,
 		Models:            models,
 	}

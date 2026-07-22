@@ -19,6 +19,7 @@ type Server struct {
 	config      *config.Config
 	router      *mux.Router
 	audiocppCli *audiocpp.Client
+	process     *audiocpp.Process
 	jobManager  *jobs.Manager
 	modelReg    *models.Registry
 	outputMgr   *outputs.Manager
@@ -27,10 +28,11 @@ type Server struct {
 	startTime   time.Time
 }
 
-func NewServer(cfg *config.Config, ac *audiocpp.Client, jm *jobs.Manager, mr *models.Registry, om *outputs.Manager) *Server {
+func NewServer(cfg *config.Config, ac *audiocpp.Client, proc *audiocpp.Process, jm *jobs.Manager, mr *models.Registry, om *outputs.Manager) *Server {
 	s := &Server{
 		config:      cfg,
 		audiocppCli: ac,
+		process:     proc,
 		jobManager:  jm,
 		modelReg:    mr,
 		outputMgr:   om,

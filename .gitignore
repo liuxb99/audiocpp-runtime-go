@@ -30,3 +30,6 @@ Thumbs.db
 
 # Config override
 configs/config.yaml
+
+# Reasonix workflow
+tasks/

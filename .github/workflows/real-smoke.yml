@@ -1,0 +1,72 @@
+name: Real ASR Smoke (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_syntax_check:
+        description: 'Skip syntax/lint checks'
+        required: false
+        default: 'false'
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Format check
+        if: inputs.skip_syntax_check != 'true'
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted files: $unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        if: inputs.skip_syntax_check != 'true'
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test (filtered, exclude CGO-dependent)
+        run: |
+          go test -count=1 $(go list ./... | grep -v -E '/tests|/internal/runtime|/internal/storage|/internal/outputs|/internal/api|/cmd/audiocpp-runtime')
+
+      - name: Test with race (CGO-enabled)
+        if: inputs.skip_syntax_check != 'true'
+        run: |
+          if go env CGO_ENABLED 2>/dev/null | grep -q 1; then
+            go test -race -count=1 $(go list ./... | grep -v /tests)
+          else
+            echo "CGO not enabled, skipping race tests"
+          fi
+
+      - name: PowerShell syntax check (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $errors = $null
+          $parsed = [System.Management.Automation.Language.Parser]::ParseFile(
+            'scripts/real_smoke_test.ps1', [ref]$null, [ref]$errors)
+          if ($errors -and $errors.Count -gt 0) {
+            foreach ($e in $errors) { Write-Error $e }
+            exit 1
+          }
+          Write-Host "PowerShell syntax OK"
+
+      - name: Path resolution unit tests (covers spaces, absolute, relative)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          go test -count=1 -run "TestResolveRelative|TestResolveAbsolute|TestResolvePathWithSpaces|TestResolveModelSpecOverride|TestLazyLoadDefault|TestModelSpecOverrideDefault|TestModelsDefault|TestSetModelConfigLazyLoad|TestGeneratedConfigJSON" ./internal/...

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liuxb99/audiocpp-runtime-go/internal/audiocpp"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/config"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/platform"
 )
@@ -212,4 +213,41 @@ func TestRuntimeStartupFailureCleansChild(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}
 	t.Fatalf("orphan process %d still exists after startup failure", pid)
+}
+
+func TestRuntimeStatusContainsChildPID(t *testing.T) {
+	port := findFreePort(t)
+	cfg := testConfig(t, port)
+	rt := New(cfg)
+
+	ctx := context.Background()
+	if err := rt.Init(ctx); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	p := rt.Process()
+	p.ExtraEnv = []string{
+		"FAKE_AUDIOCPP_CHILD=1",
+		"FAKE_CHILD_ACTION=health",
+	}
+	p.SetModelConfig(nil)
+
+	if err := rt.StartAudioCpp(ctx); err != nil {
+		t.Fatalf("StartAudioCpp: %v", err)
+	}
+	defer rt.Shutdown(ctx)
+
+	pid := rt.AudioCppPID()
+	if pid == 0 {
+		t.Error("expected non-zero AudioCppPID")
+	}
+
+	state := rt.AudioCppState()
+	if state != audiocpp.StateRunning {
+		t.Errorf("expected StateRunning, got %v", state)
+	}
+
+	if !rt.IsAudioCppAlive() {
+		t.Error("expected IsAudioCppAlive() to be true")
+	}
 }

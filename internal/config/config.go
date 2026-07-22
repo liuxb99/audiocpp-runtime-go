@@ -12,19 +12,41 @@ type ServerConfig struct {
 	Port int    `yaml:"port"`
 }
 
+type ModelConfig struct {
+	ID                 string                 `yaml:"id"`
+	Path               string                 `yaml:"path"`
+	Family             string                 `yaml:"family"`
+	Task               string                 `yaml:"task"`
+	Mode               string                 `yaml:"mode"`
+	Lazy               bool                   `yaml:"lazy"`
+	VoicePresets       map[string]VoicePreset `yaml:"voice_presets"`
+	DefaultVoicePreset interface{}            `yaml:"default_voice_preset"`
+	LoadOptions        map[string]string      `yaml:"load_options"`
+	SessionOptions     map[string]string      `yaml:"session_options"`
+}
+
+type VoicePreset struct {
+	VoiceID       string `yaml:"voice_id"`
+	VoiceRef      string `yaml:"voice_ref"`
+	ReferenceText string `yaml:"reference_text"`
+}
+
 type AudioCppConfig struct {
-	ServerPath         string `yaml:"server_path"`
-	CliPath            string `yaml:"cli_path"`
-	WorkingDir         string `yaml:"working_dir"`
-	Backend            string `yaml:"backend"`
-	Device             int    `yaml:"device"`
-	Threads            int    `yaml:"threads"`
-	Host               string `yaml:"host"`
-	Port               int    `yaml:"port"`
-	StartupTimeoutSec  int    `yaml:"startup_timeout_seconds"`
-	RequestTimeoutSec  int    `yaml:"request_timeout_seconds"`
-	AutoRestart        bool   `yaml:"auto_restart"`
-	MaxRestartAttempts int    `yaml:"max_restart_attempts"`
+	ServerPath         string        `yaml:"server_path"`
+	CliPath            string        `yaml:"cli_path"`
+	WorkingDir         string        `yaml:"working_dir"`
+	Backend            string        `yaml:"backend"`
+	Device             int           `yaml:"device"`
+	Threads            int           `yaml:"threads"`
+	Host               string        `yaml:"host"`
+	Port               int           `yaml:"port"`
+	StartupTimeoutSec  int           `yaml:"startup_timeout_seconds"`
+	RequestTimeoutSec  int           `yaml:"request_timeout_seconds"`
+	AutoRestart        bool          `yaml:"auto_restart"`
+	MaxRestartAttempts int           `yaml:"max_restart_attempts"`
+	LazyLoad           bool          `yaml:"lazy_load"`
+	ModelSpecOverride  string        `yaml:"model_spec_override"`
+	Models             []ModelConfig `yaml:"models"`
 }
 
 type StorageConfig struct {
@@ -74,6 +96,7 @@ func DefaultConfig() *Config {
 			RequestTimeoutSec:  600,
 			AutoRestart:        true,
 			MaxRestartAttempts: 5,
+			LazyLoad:           false,
 		},
 		Storage: StorageConfig{
 			SqlitePath: "data/runtime.db",
@@ -141,9 +164,15 @@ func (c *Config) Validate(baseDir string) error {
 	if c.Storage.SqlitePath == "" {
 		errs = append(errs, "storage.sqlite_path must not be empty")
 	}
-	if _, err := os.Stat(filepath.Join(baseDir, c.AudioCpp.ServerPath)); err != nil {
-		errs = append(errs, fmt.Sprintf("audiocpp.server_path not found: %s (resolved: %s)",
-			c.AudioCpp.ServerPath, filepath.Join(baseDir, c.AudioCpp.ServerPath)))
+	if c.AudioCpp.ServerPath != "" {
+		resolvedServerPath := c.AudioCpp.ServerPath
+		if !filepath.IsAbs(resolvedServerPath) {
+			resolvedServerPath = filepath.Join(baseDir, resolvedServerPath)
+		}
+		if _, err := os.Stat(resolvedServerPath); err != nil {
+			errs = append(errs, fmt.Sprintf("audiocpp.server_path not found: %s (resolved: %s)",
+				c.AudioCpp.ServerPath, resolvedServerPath))
+		}
 	}
 
 	if len(errs) > 0 {
@@ -154,6 +183,11 @@ func (c *Config) Validate(baseDir string) error {
 
 func (c *Config) ResolvePaths(baseDir string) {
 	resolve := func(p string) string {
+		if p == "" {
+			return ""
+		}
+		// Normalize slashes for Windows IsAbs check
+		p = filepath.FromSlash(p)
 		if filepath.IsAbs(p) {
 			return p
 		}
@@ -162,8 +196,12 @@ func (c *Config) ResolvePaths(baseDir string) {
 	c.AudioCpp.ServerPath = resolve(c.AudioCpp.ServerPath)
 	c.AudioCpp.CliPath = resolve(c.AudioCpp.CliPath)
 	c.AudioCpp.WorkingDir = resolve(c.AudioCpp.WorkingDir)
+	c.AudioCpp.ModelSpecOverride = resolve(c.AudioCpp.ModelSpecOverride)
 	c.Storage.SqlitePath = resolve(c.Storage.SqlitePath)
 	c.Models.RootDir = resolve(c.Models.RootDir)
 	c.Models.RegistryPath = resolve(c.Models.RegistryPath)
 	c.Outputs.RootDir = resolve(c.Outputs.RootDir)
+	for i := range c.AudioCpp.Models {
+		c.AudioCpp.Models[i].Path = resolve(c.AudioCpp.Models[i].Path)
+	}
 }

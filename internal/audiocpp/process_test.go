@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -372,5 +373,92 @@ func TestProcessStateTransitions(t *testing.T) {
 	p.Stop()
 	if p.State() != StateStopped {
 		t.Errorf("after Stop, state should be Stopped, got %v", p.State())
+	}
+}
+
+func TestSetModelConfigLazyLoad(t *testing.T) {
+	p := NewProcess(t.TempDir(), "test.exe", "", "127.0.0.1", 9999, 0, 1, "cpu", false, 0)
+
+	p.SetLazyLoad(true)
+	p.SetModelSpecOverride("/custom/model_specs")
+	p.SetModelConfig([]ServerModelConfig{
+		{ID: "test-model", Path: "/models/test", Family: "citrinet_asr"},
+	})
+
+	if !p.lazyLoad {
+		t.Error("expected lazyLoad to be true after SetLazyLoad(true)")
+	}
+	if p.modelSpecOverride != "/custom/model_specs" {
+		t.Errorf("expected modelSpecOverride /custom/model_specs, got %q", p.modelSpecOverride)
+	}
+	if p.config == nil {
+		t.Fatal("expected config to be non-nil after SetModelConfig")
+	}
+	if p.config.LazyLoad != true {
+		t.Errorf("expected config.LazyLoad true, got %v", p.config.LazyLoad)
+	}
+	if p.config.ModelSpecOverride != "/custom/model_specs" {
+		t.Errorf("expected config.ModelSpecOverride /custom/model_specs, got %q", p.config.ModelSpecOverride)
+	}
+	if len(p.config.Models) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(p.config.Models))
+	}
+	if p.config.Models[0].Path != "/models/test" {
+		t.Errorf("expected model path /models/test, got %q", p.config.Models[0].Path)
+	}
+}
+
+func TestSetModelConfigLazyLoadDefault(t *testing.T) {
+	p := NewProcess(t.TempDir(), "test.exe", "", "127.0.0.1", 9999, 0, 1, "cpu", false, 0)
+
+	// Without calling SetLazyLoad, lazyLoad should default to false
+	p.SetModelConfig([]ServerModelConfig{
+		{ID: "test", Path: "/models/test", Family: "citrinet_asr"},
+	})
+
+	if p.config.LazyLoad != false {
+		t.Error("expected config.LazyLoad to default to false")
+	}
+}
+
+func TestGeneratedConfigJSON(t *testing.T) {
+	cfgDir := t.TempDir()
+	p := NewProcess(cfgDir, "test.exe", "", "127.0.0.1", 9999, 0, 1, "cpu", false, 0)
+
+	p.SetModelSpecOverride("/resolved/model_specs")
+	p.SetLazyLoad(false)
+	p.SetModelConfig([]ServerModelConfig{
+		{ID: "citrinet-asr", Path: "/resolved/models/citrinet", Family: "citrinet_asr", Task: "asr", Mode: "offline"},
+	})
+
+	ctx := context.Background()
+	if err := p.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer p.Stop()
+
+	// Read the generated JSON file
+	configPath := p.ConfigPath()
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", configPath, err)
+	}
+
+	// Verify key fields
+	content := string(data)
+	if !strings.Contains(content, `"model_spec_override": "/resolved/model_specs"`) {
+		t.Errorf("generated JSON missing model_spec_override, got:\n%s", content)
+	}
+	if !strings.Contains(content, `"lazy_load": false`) {
+		t.Errorf("generated JSON has wrong lazy_load, got:\n%s", content)
+	}
+	if !strings.Contains(content, `"device": 0`) {
+		t.Errorf("generated JSON missing device, got:\n%s", content)
+	}
+	if !strings.Contains(content, `"threads": 1`) {
+		t.Errorf("generated JSON missing threads, got:\n%s", content)
+	}
+	if !strings.Contains(content, `"path": "/resolved/models/citrinet"`) {
+		t.Errorf("generated JSON missing resolved model path, got:\n%s", content)
 	}
 }

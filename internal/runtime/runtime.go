@@ -87,6 +87,38 @@ func (r *Runtime) Init(ctx context.Context) error {
 		r.cfg.AudioCpp.MaxRestartAttempts,
 	)
 
+	if r.cfg.AudioCpp.ModelSpecOverride != "" {
+		r.proc.SetModelSpecOverride(r.cfg.AudioCpp.ModelSpecOverride)
+	}
+	r.proc.SetLazyLoad(r.cfg.AudioCpp.LazyLoad)
+
+	if len(r.cfg.AudioCpp.Models) > 0 {
+		models := make([]audiocpp.ServerModelConfig, len(r.cfg.AudioCpp.Models))
+		for i, m := range r.cfg.AudioCpp.Models {
+			presets := make(map[string]audiocpp.VoicePreset)
+			for k, v := range m.VoicePresets {
+				presets[k] = audiocpp.VoicePreset{
+					VoiceID:       v.VoiceID,
+					VoiceRef:      v.VoiceRef,
+					ReferenceText: v.ReferenceText,
+				}
+			}
+			models[i] = audiocpp.ServerModelConfig{
+				ID:                 m.ID,
+				Path:               m.Path,
+				Family:             m.Family,
+				Task:               m.Task,
+				Mode:               m.Mode,
+				Lazy:               m.Lazy,
+				VoicePresets:       presets,
+				DefaultVoicePreset: m.DefaultVoicePreset,
+				LoadOptions:        m.LoadOptions,
+				SessionOptions:     m.SessionOptions,
+			}
+		}
+		r.proc.SetModelConfig(models)
+	}
+
 	r.lifetimeCtx, r.lifetimeCnl = context.WithCancel(ctx)
 
 	log.Printf("[runtime] initialization complete")
@@ -203,6 +235,20 @@ func (r *Runtime) Config() *config.Config {
 
 func (r *Runtime) StartTime() time.Time {
 	return r.startTime
+}
+
+func (r *Runtime) AudioCppPID() int {
+	if r.proc == nil {
+		return 0
+	}
+	return r.proc.Pid()
+}
+
+func (r *Runtime) AudioCppState() audiocpp.ProcessState {
+	if r.proc == nil {
+		return audiocpp.StateStopped
+	}
+	return r.proc.State()
 }
 
 func (r *Runtime) IsAudioCppAlive() bool {

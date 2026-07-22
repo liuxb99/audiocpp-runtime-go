@@ -426,3 +426,98 @@ func TestResolvePaths_Absolute(t *testing.T) {
 		t.Errorf("expected RootDir unchanged, got %q", cfg.Models.RootDir)
 	}
 }
+
+func TestResolveRelativeModelPath(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.AudioCpp.Models = []ModelConfig{
+		{ID: "test-model", Path: "models/test", Family: "citrinet_asr"},
+	}
+	baseDir := "/repo/root"
+	cfg.ResolvePaths(baseDir)
+
+	want := filepath.Join(baseDir, "models/test")
+	if cfg.AudioCpp.Models[0].Path != want {
+		t.Errorf("expected model path %q, got %q", want, cfg.AudioCpp.Models[0].Path)
+	}
+}
+
+func TestResolveAbsoluteModelPath(t *testing.T) {
+	absPath := filepath.Join("C:", "absolute", "models", "test")
+	if !filepath.IsAbs(absPath) {
+		absPath = filepath.Join(t.TempDir(), "models", "test")
+	}
+
+	cfg := DefaultConfig()
+	cfg.AudioCpp.Models = []ModelConfig{
+		{ID: "test-model", Path: absPath, Family: "citrinet_asr"},
+	}
+	cfg.ResolvePaths("/some/base")
+
+	if cfg.AudioCpp.Models[0].Path != absPath {
+		t.Errorf("expected absolute path unchanged %q, got %q", absPath, cfg.AudioCpp.Models[0].Path)
+	}
+}
+
+func TestResolvePathWithSpaces(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.AudioCpp.ModelSpecOverride = "audio.cpp/model specs"
+	cfg.AudioCpp.Models = []ModelConfig{
+		{ID: "test", Path: "models/my models/citrinet", Family: "citrinet_asr"},
+	}
+	baseDir := "C:/repo root"
+	cfg.ResolvePaths(baseDir)
+
+	wantModelSpec := filepath.Join(baseDir, "audio.cpp/model specs")
+	if cfg.AudioCpp.ModelSpecOverride != wantModelSpec {
+		t.Errorf("expected model_spec_override %q, got %q", wantModelSpec, cfg.AudioCpp.ModelSpecOverride)
+	}
+
+	wantModelPath := filepath.Join(baseDir, "models/my models/citrinet")
+	if cfg.AudioCpp.Models[0].Path != wantModelPath {
+		t.Errorf("expected model path %q, got %q", wantModelPath, cfg.AudioCpp.Models[0].Path)
+	}
+}
+
+func TestLazyLoadDefault(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.AudioCpp.LazyLoad {
+		t.Error("expected LazyLoad to be false by default")
+	}
+}
+
+func TestModelSpecOverrideDefault(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.AudioCpp.ModelSpecOverride != "" {
+		t.Errorf("expected ModelSpecOverride to be empty, got %q", cfg.AudioCpp.ModelSpecOverride)
+	}
+}
+
+func TestModelsDefault(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.AudioCpp.Models != nil {
+		t.Errorf("expected Models to be nil, got %v", cfg.AudioCpp.Models)
+	}
+}
+
+func TestResolveModelSpecOverride(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.AudioCpp.ModelSpecOverride = "./model_specs"
+	baseDir := "/base"
+	cfg.ResolvePaths(baseDir)
+
+	want := filepath.Join(baseDir, "./model_specs")
+	got := cfg.AudioCpp.ModelSpecOverride
+	if got != want {
+		t.Errorf("expected ModelSpecOverride %q, got %q", want, got)
+	}
+}
+
+func TestResolveModelSpecOverrideEmpty(t *testing.T) {
+	cfg := DefaultConfig()
+	baseDir := "/base"
+	cfg.ResolvePaths(baseDir)
+
+	if cfg.AudioCpp.ModelSpecOverride != "" {
+		t.Errorf("expected empty ModelSpecOverride, got %q", cfg.AudioCpp.ModelSpecOverride)
+	}
+}

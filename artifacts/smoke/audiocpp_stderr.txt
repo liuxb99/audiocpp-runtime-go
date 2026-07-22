@@ -1,1 +1,0 @@
-audio.cpp is optimized for CUDA. The cpu server backend is intended for portability and testing, but performance and model coverage may be lower than CUDA.
