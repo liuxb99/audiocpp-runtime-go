@@ -1,0 +1,7 @@
+﻿{
+    "wav_sha256":  "C60AE0337844C9B4071E242DA4F916EF7113BE0AE90AF27971152879653EBC93",
+    "method":  "POST",
+    "url":  "http://127.0.0.1:18091/v1/audio/transcriptions",
+    "wav_path":  "D:\\AI-Tools\\audio-cpp-runtime-go\\testdata\\audio\\english_short_16k.wav",
+    "timestamp":  "2026-07-22T22:37:20.1089887+08:00"
+}

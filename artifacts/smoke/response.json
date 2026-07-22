@@ -1,0 +1,10 @@
+﻿{
+    "data":  {
+                 "text":  "the quickbrown fox jumps over the lazy blog",
+                 "timing":  {
+                                "wall_ms":  123.998,
+                                "audio_duration_ms":  3849.44,
+                                "rtf":  0.0322118
+                            }
+             }
+}

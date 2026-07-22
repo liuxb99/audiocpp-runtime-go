@@ -56,10 +56,10 @@ function Write-Log($msg) {
 }
 
 # ---- Helper: wait for PID to exit ----
-function Wait-PidExit($pid, $timeoutSeconds) {
+function Wait-PidExit($procId, $timeoutSeconds) {
     $elapsed = 0
     while ($elapsed -lt $timeoutSeconds) {
-        $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+        $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
         if (-not $proc) { return $true }
         Start-Sleep -Seconds 1
         $elapsed++
@@ -69,7 +69,7 @@ function Wait-PidExit($pid, $timeoutSeconds) {
 
 # ---- Helper: check port in use ----
 function Test-PortFree($port) {
-    $conn = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+    $conn = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Where-Object { $_.State -ne "TimeWait" }
     return (-not $conn)
 }
 
@@ -188,7 +188,8 @@ $timeout = [datetime]::Now.AddSeconds($ReadyTimeoutSec)
 while ([datetime]::Now -lt $timeout) {
     try {
         $resp = Invoke-RestMethod -Uri $healthUrl -Method Get -ErrorAction Stop
-        if ($resp.status -eq "ok") {
+        $healthStatus = if ($resp.data) { $resp.data.status } else { $resp.status }
+        if ($healthStatus -eq "ok") {
             $ready = $true
             Write-Log "[10/22] Go Runtime ready (status: ok)"
             break
@@ -209,8 +210,9 @@ $childPID = 0
 $childState = ""
 try {
     $healthData = Invoke-RestMethod -Uri $healthUrl -Method Get -ErrorAction Stop
-    $childPID = $healthData.audiocpp_pid
-    $childState = $healthData.audiocpp_state
+    $data = if ($healthData.data) { $healthData.data } else { $healthData }
+    $childPID = $data.audiocpp_pid
+    $childState = $data.audiocpp_state
     Write-Log "[11/22] audiocpp child PID: $childPID, state: $childState"
 } catch {
     Write-Host "REAL_SMOKE_FAIL: Could not read health endpoint for child PID"
@@ -230,11 +232,13 @@ $transcribeUrl = "http://127.0.0.1:$RuntimePort/v1/audio/transcriptions"
 Write-Log "[12/22] Sending POST $transcribeUrl"
 
 # Save request metadata
+$wavSha256 = ""
+try { $wavSha256 = (Get-FileHash -Path $wavPath -Algorithm SHA256 -ErrorAction Stop).Hash } catch {}
 $requestInfo = @{
     url = $transcribeUrl
     method = "POST"
     wav_path = $wavPath
-    wav_sha256 = (Get-FileHash -Path $wavPath -Algorithm SHA256).Hash
+    wav_sha256 = $wavSha256
     timestamp = (Get-Date -Format 'o')
 } | ConvertTo-Json
 $requestInfo | Set-Content -Path (Join-Path $ArtifactsDir "request.json") -Encoding UTF8
@@ -245,39 +249,50 @@ $httpStatus = 0
 $inferenceStart = Get-Date
 
 try {
-    $response = Invoke-RestMethod -Uri $transcribeUrl -Method Post `
-        -Form @{ file = Get-Item -Path $wavPath } `
-        -ContentType "multipart/form-data" `
-        -ErrorAction Stop
+    # Use .NET HttpClient for multipart upload (PowerShell 5.1 compatible)
+    Add-Type -AssemblyName System.Net.Http
+    $client = New-Object System.Net.Http.HttpClient
+    $content = New-Object System.Net.Http.MultipartFormDataContent
+    $fileStream = [System.IO.File]::OpenRead($wavPath)
+    $fileContent = New-Object System.Net.Http.StreamContent($fileStream)
+    $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("audio/wav")
+    $content.Add($fileContent, "file", [System.IO.Path]::GetFileName($wavPath))
+    # Add model field (required by API)
+    $modelContent = New-Object System.Net.Http.StringContent("citrinet-asr")
+    $content.Add($modelContent, "model")
+    
+    $response = $client.PostAsync($transcribeUrl, $content).Result
     $inferenceEnd = Get-Date
     $inferenceMs = [math]::Round(($inferenceEnd - $inferenceStart).TotalMilliseconds)
+    $httpStatus = [int]$response.StatusCode
     
-    # Save raw response
-    $response | ConvertTo-Json -Depth 10 | Set-Content -Path $responsePath -Encoding UTF8
-    Write-Log "[13/22] Response saved to $responsePath"
-    
-    # Parse transcription text (handle both wrapped and raw responses)
-    if ($response.text) {
-        $transcriptionText = $response.text
-    } elseif ($response.data -and $response.data.text) {
-        $transcriptionText = $response.data.text
+    if ($response.IsSuccessStatusCode) {
+        $responseBody = $response.Content.ReadAsStringAsync().Result
+        $responseJson = $responseBody | ConvertFrom-Json
+        $responseJson | ConvertTo-Json -Depth 10 | Set-Content -Path $responsePath -Encoding UTF8
+        Write-Log "[13/22] Response saved to $responsePath"
+        
+        # Parse transcription text
+        if ($responseJson.text) {
+            $transcriptionText = $responseJson.text
+        } elseif ($responseJson.data -and $responseJson.data.text) {
+            $transcriptionText = $responseJson.data.text
+        } else {
+            $transcriptionText = $responseBody
+        }
+        Write-Log "[12/22] HTTP 200, transcription received"
     } else {
-        $transcriptionText = $response | ConvertTo-Json -Compress
+        $errorBody = $response.Content.ReadAsStringAsync().Result
+        $errorBody | Set-Content -Path $responsePath -Encoding UTF8
+        Write-Log "[12/22] HTTP $httpStatus - transcription failed: $errorBody"
     }
-    $httpStatus = 200
-    Write-Log "[12/22] HTTP 200, transcription received"
+    
+    $fileStream.Close()
+    $client.Dispose()
 } catch {
     $inferenceEnd = Get-Date
     $inferenceMs = [math]::Round(($inferenceEnd - $inferenceStart).TotalMilliseconds)
-    $httpStatus = [int]$_.Exception.Response.StatusCode
-    Write-Log "[12/22] HTTP $httpStatus - transcription failed: $_"
-    
-    # Save error response
-    try {
-        $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-        $errorBody = $reader.ReadToEnd() | ConvertFrom-Json -ErrorAction SilentlyContinue
-        $errorBody | ConvertTo-Json -Depth 10 | Set-Content -Path $responsePath -Encoding UTF8
-    } catch {}
+    Write-Log "[12/22] Exception during transcription: $_"
 }
 
 # ---- 14. Parse transcription text ----
@@ -309,40 +324,47 @@ if ($textNonEmpty -and $ExpectedText) {
     }
 }
 
-# ---- 17. Graceful shutdown (send Ctrl+C equivalent via Stop-Process) ----
+# ---- 17. Graceful shutdown via taskkill (process tree) ----
 $shutdownStart = Get-Date
-Stop-Process -Id $runtimePID -ErrorAction SilentlyContinue
+$taskkillResult = taskkill /PID $runtimePID /T /F 2>&1
 $shutdownEnd = Get-Date
 $shutdownMs = [math]::Round(($shutdownEnd - $shutdownStart).TotalMilliseconds)
-Write-Log "[17/22] Graceful shutdown signal sent, shutdown took ${shutdownMs}ms"
+Write-Log "[17/22] taskkill /T /F on PID $runtimePID, took ${shutdownMs}ms"
 
 # ---- 18. Wait for Runtime PID to exit ----
-$runtimeExited = Wait-PidExit -pid $runtimePID -timeoutSeconds 10
+$runtimeExited = Wait-PidExit -procId $runtimePID -timeoutSeconds 10
 if ($runtimeExited) {
     Write-Log "[18/22] Runtime PID $runtimePID exited"
 } else {
-    Write-Log "[18/22] Runtime PID $runtimePID still alive after timeout, force killing"
-    Stop-Process -Id $runtimePID -Force -ErrorAction SilentlyContinue
+    Write-Log "[18/22] Runtime PID $runtimePID still alive after timeout"
 }
 
-# ---- 19. Wait for child PID to exit ----
+# ---- 19. Wait for child PID to exit (taskkill /T should have cleaned it) ----
 $childExited = $true
 $childAliveAfter = $false
 if ($childPID -gt 0) {
-    $childExited = Wait-PidExit -pid $childPID -timeoutSeconds 10
+    $childExited = Wait-PidExit -procId $childPID -timeoutSeconds 5
     if ($childExited) {
         Write-Log "[19/22] Child PID $childPID exited"
     } else {
-        Write-Log "[19/22] Child PID $childPID still alive after timeout, forcing"
-        Stop-Process -Id $childPID -Force -ErrorAction SilentlyContinue
-        $childAliveAfter = $true
+        Write-Log "[19/22] Child PID $childPID still alive, force killing"
+        taskkill /PID $childPID /F 2>&1 | Out-Null
+        Start-Sleep 1
+        $childExited = -not (Get-Process -Id $childPID -ErrorAction SilentlyContinue)
+        $childAliveAfter = -not $childExited
+        Write-Log "[19/22] Child force kill result: exited=$childExited"
     }
 }
 
-# ---- 20. Check port release ----
-Start-Sleep -Seconds 2  # Wait for OS to release
-$runtimePortFree = Test-PortFree -port $RuntimePort
-$audioCppPortFree = Test-PortFree -port $AudioCppPort
+# ---- 20. Check port release (retry for TIME_WAIT) ----
+$runtimePortFree = $false
+$audioCppPortFree = $false
+for ($retry = 0; $retry -lt 6; $retry++) {
+    $runtimePortFree = Test-PortFree -port $RuntimePort
+    $audioCppPortFree = Test-PortFree -port $AudioCppPort
+    if ($runtimePortFree -and $audioCppPortFree) { break }
+    Start-Sleep -Seconds 2
+}
 Write-Log "[20/22] Runtime port $RuntimePort free: $runtimePortFree"
 Write-Log "[20/22] AudioCpp port $AudioCppPort free: $audioCppPortFree"
 
