@@ -1,10 +1,13 @@
-2026/07/22 22:37:18 [runtime] initializing
-2026/07/22 22:37:18 [runtime] initialization complete
-2026/07/22 22:37:18 [runtime] starting audiocpp server
-2026/07/22 22:37:18 [audiocpp] started server (pid=7796)
-2026/07/22 22:37:18 [audiocpp:stderr] audio.cpp is optimized for CUDA. The 
-2026/07/22 22:37:18 [audiocpp:stderr] cpu server backend is intended for portability and testing, but performance and model coverage may be lower than CUDA.
-2026/07/22 22:37:18 [runtime] audiocpp server is ready
-2026/07/22 22:37:18 [jobs] started 1 workers
-2026/07/22 22:37:18 audiocpp-runtime started on 127.0.0.1:18091
-2026/07/22 22:37:18 API server starting on 127.0.0.1:18091
+2026/07/23 07:29:14 [runtime] initializing
+2026/07/23 07:29:14 [runtime] initialization complete
+2026/07/23 07:29:14 [runtime] starting audiocpp server
+2026/07/23 07:29:14 [audiocpp] started server (pid=25796)
+2026/07/23 07:29:14 [audiocpp:stderr] audio.cpp is optimized for CUDA. The 
+2026/07/23 07:29:14 [audiocpp:stderr] cpu server backend is intended for portability and testing, but performance and model coverage may be lower than CUDA.
+2026/07/23 07:29:15 [runtime] audiocpp server is ready
+2026/07/23 07:29:15 [jobs] started 1 workers
+2026/07/23 07:29:15 audiocpp-runtime started on 127.0.0.1:18091
+2026/07/23 07:29:15 API server starting on 127.0.0.1:18091
+2026/07/23 07:29:16 [api] stopping audiocpp process via shutdown endpoint
+2026/07/23 07:29:16 [audiocpp] stopping server (pid=25796)
+2026/07/23 07:29:17 [api] shutting down HTTP server

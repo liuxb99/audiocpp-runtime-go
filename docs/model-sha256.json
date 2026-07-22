@@ -1,0 +1,18 @@
+{
+  "files": {
+    "citrinet_256.safetensors": {
+      "sha256": "15aa3209ae85de5197685d61a676be66cd736f1448e712e3bc826f175b0ef810",
+      "size": 41486364
+    },
+    "citrinet_256_config.json": {
+      "sha256": "2fd0fb838b92917da5b0852885463d5fa0dfb5d2dc0415d7e5aeae1f17631789",
+      "size": 6825
+    },
+    "citrinet_256_tokenizer.model": {
+      "sha256": "a7dbb4eac08e0e7713d23c0e1b18c0a52e2278c540186728a249b77dc63d1177",
+      "size": 253072
+    }
+  },
+  "recorded_at": "2025-07-22T23:17:40+08:00",
+  "expected_model": "citrinet-asr"
+}

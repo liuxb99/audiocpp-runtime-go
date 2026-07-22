@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/liuxb99/audiocpp-runtime-go/internal/audiocpp"
 )
@@ -61,6 +63,35 @@ func (s *Server) handleListCapabilities(w http.ResponseWriter, r *http.Request) 
 		{"id": "voice_design", "name": "Voice Design"},
 	}
 	writeJSON(w, http.StatusOK, capabilities)
+}
+
+// handleShutdown triggers graceful shutdown of the audiocpp process.
+// It synchronously stops the audiocpp process first, then signals the
+// HTTP server to shut down asynchronously.
+func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	// Stop audiocpp process synchronously
+	if s.process != nil {
+		s.logger.Printf("[api] stopping audiocpp process via shutdown endpoint")
+		if err := s.process.Stop(); err != nil {
+			s.logger.Printf("[api] error stopping audiocpp process: %v", err)
+		}
+	}
+
+	// Respond after audiocpp has been stopped
+	writeJSON(w, http.StatusOK, map[string]string{"status": "shutting_down"})
+
+	// Shutdown HTTP server asynchronously (after response is sent)
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		if s.httpServer != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			s.logger.Printf("[api] shutting down HTTP server")
+			if err := s.httpServer.Shutdown(ctx); err != nil {
+				s.logger.Printf("[api] HTTP server shutdown error: %v", err)
+			}
+		}
+	}()
 }
 
 func (s *Server) handleAlign(w http.ResponseWriter, r *http.Request) {

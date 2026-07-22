@@ -46,7 +46,9 @@ func fakeChildMain() {
 		server.ListenAndServe()
 		os.Exit(0)
 	default:
-		select {}
+		for {
+			time.Sleep(time.Hour)
+		}
 	}
 }
 
@@ -188,6 +190,7 @@ func TestRuntimeStartupFailureCleansChild(t *testing.T) {
 	if err := rt.Init(ctx); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
+	defer rt.Shutdown(ctx)
 
 	p := rt.Process()
 	p.ExtraEnv = []string{

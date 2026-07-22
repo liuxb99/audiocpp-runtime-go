@@ -69,8 +69,17 @@ function Wait-PidExit($procId, $timeoutSeconds) {
 
 # ---- Helper: check port in use ----
 function Test-PortFree($port) {
-    $conn = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Where-Object { $_.State -ne "TimeWait" }
+    # Ignore closing/transitional states — we only care about ports in established use
+    $ignoreStates = @("TimeWait", "CloseWait", "FinWait1", "FinWait2", "LastAck", "Bound")
+    $conn = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue |
+        Where-Object { $_.State -notin $ignoreStates }
     return (-not $conn)
+}
+
+# ---- Helper: write file as UTF-8 without BOM (PS 5.1 compatible) ----
+function Write-FileUtf8NoBom($path, $content) {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($path, $content, $utf8NoBom)
 }
 
 Write-Log "=== REAL SMOKE TEST START ==="
@@ -106,12 +115,29 @@ foreach ($f in $requiredModels) {
 }
 Write-Log "[4/22] Citrinet model files present"
 
-# ---- 5. Validate model SHA256 (recorded, warn-only) ----
-$shaFile = Join-Path $repoRoot "docs/REAL_MODEL_CITRINET.md"
-if (Test-Path $shaFile) {
-    Write-Log "[5/22] Model SHA256 documented at $shaFile (manual verify at install time)"
-} else {
-    Write-Log "[5/22] WARNING: REAL_MODEL_CITRINET.md not found"
+# ---- 5. Validate model SHA256 against recorded checksums ----
+$shaJsonPath = Join-Path $repoRoot "docs/model-sha256.json"
+if (-not (Test-Path $shaJsonPath)) {
+    Write-Host "REAL_SMOKE_FAIL: model-sha256.json not found at $shaJsonPath"
+    exit 1
+}
+$shaRecordedRaw = Get-Content $shaJsonPath -Raw | ConvertFrom-Json
+$shaRecorded = $shaRecordedRaw.files
+foreach ($f in $requiredModels) {
+    $mp = Join-Path $modelPath $f
+    if (-not (Test-Path $mp)) {
+        Write-Host "REAL_SMOKE_FAIL: Model file missing during SHA256 check: $mp"
+        exit 1
+    }
+    $actualHash = (Get-FileHash -Path $mp -Algorithm SHA256).Hash
+    $expectedHash = $shaRecorded.$f.sha256
+    if ($actualHash -ne $expectedHash) {
+        Write-Host "REAL_SMOKE_FAIL: SHA256 mismatch for $f"
+        Write-Host "  Expected: $expectedHash"
+        Write-Host "  Actual:   $actualHash"
+        exit 1
+    }
+    Write-Log "[5/22] $f SHA256 verified OK"
 }
 
 # ---- 6. Check real test WAV ----
@@ -159,15 +185,8 @@ jobs:
   queue_size: 10
 "@
 $smokeConfigPath = Join-Path $env:TEMP "audiocpp_smoke_config_$(Get-Random).yaml"
-$smokeConfig | Set-Content -Path $smokeConfigPath -Encoding UTF8
+Write-FileUtf8NoBom -path $smokeConfigPath -content $smokeConfig
 Write-Log "[7/22] Generated smoke config: $smokeConfigPath"
-
-# ---- Capture processes before ----
-$processesBefore = @()
-try {
-    $processesBefore = Get-Process | Select-Object Id, ProcessName, StartTime | ConvertTo-Json
-} catch {}
-$processesBefore | Set-Content -Path (Join-Path $ArtifactsDir "processes-before.json") -Encoding UTF8
 
 # ---- 8. Start Go Runtime ----
 $runtimeLog = Join-Path $ArtifactsDir "runtime.log"
@@ -189,9 +208,13 @@ while ([datetime]::Now -lt $timeout) {
     try {
         $resp = Invoke-RestMethod -Uri $healthUrl -Method Get -ErrorAction Stop
         $healthStatus = if ($resp.data) { $resp.data.status } else { $resp.status }
-        if ($healthStatus -eq "ok") {
+        $healthData = if ($resp.data) { $resp.data } else { $resp }
+        $audiocppAlive = $healthData.audiocpp_alive
+        $audiocppState = $healthData.audiocpp_state
+        $audiocppPid = $healthData.audiocpp_pid
+        if ($healthStatus -eq "ok" -and $audiocppAlive -eq $true -and $audiocppState -eq "running" -and $audiocppPid -gt 0) {
             $ready = $true
-            Write-Log "[10/22] Go Runtime ready (status: ok)"
+            Write-Log "[10/22] Go Runtime ready (status=ok, audiocpp_alive=$audiocppAlive, state=$audiocppState, pid=$audiocppPid)"
             break
         }
     } catch {
@@ -220,13 +243,6 @@ try {
     exit 1
 }
 
-# ---- Capture processes running (with child) ----
-$processesRunning = @()
-try {
-    $processesRunning = Get-Process | Select-Object Id, ProcessName, StartTime | ConvertTo-Json
-} catch {}
-$processesRunning | Set-Content -Path (Join-Path $ArtifactsDir "processes-running.json") -Encoding UTF8
-
 # ---- 12. Send transcription request ----
 $transcribeUrl = "http://127.0.0.1:$RuntimePort/v1/audio/transcriptions"
 Write-Log "[12/22] Sending POST $transcribeUrl"
@@ -241,11 +257,13 @@ $requestInfo = @{
     wav_sha256 = $wavSha256
     timestamp = (Get-Date -Format 'o')
 } | ConvertTo-Json
-$requestInfo | Set-Content -Path (Join-Path $ArtifactsDir "request.json") -Encoding UTF8
+Write-FileUtf8NoBom -path (Join-Path $ArtifactsDir "request.json") -content $requestInfo
 
 $responsePath = Join-Path $ArtifactsDir "response.json"
 $transcriptionText = ""
 $httpStatus = 0
+$responseReceived = $false
+$responseParsed = $false
 $inferenceStart = Get-Date
 
 try {
@@ -262,6 +280,7 @@ try {
     $content.Add($modelContent, "model")
     
     $response = $client.PostAsync($transcribeUrl, $content).Result
+    $responseReceived = $true
     $inferenceEnd = Get-Date
     $inferenceMs = [math]::Round(($inferenceEnd - $inferenceStart).TotalMilliseconds)
     $httpStatus = [int]$response.StatusCode
@@ -269,7 +288,9 @@ try {
     if ($response.IsSuccessStatusCode) {
         $responseBody = $response.Content.ReadAsStringAsync().Result
         $responseJson = $responseBody | ConvertFrom-Json
-        $responseJson | ConvertTo-Json -Depth 10 | Set-Content -Path $responsePath -Encoding UTF8
+        $responseParsed = $true
+        $responseJsonStr = $responseJson | ConvertTo-Json -Depth 10
+        Write-FileUtf8NoBom -path $responsePath -content $responseJsonStr
         Write-Log "[13/22] Response saved to $responsePath"
         
         # Parse transcription text
@@ -283,7 +304,7 @@ try {
         Write-Log "[12/22] HTTP 200, transcription received"
     } else {
         $errorBody = $response.Content.ReadAsStringAsync().Result
-        $errorBody | Set-Content -Path $responsePath -Encoding UTF8
+        Write-FileUtf8NoBom -path $responsePath -content $errorBody
         Write-Log "[12/22] HTTP $httpStatus - transcription failed: $errorBody"
     }
     
@@ -308,6 +329,7 @@ if ($textNonEmpty) {
 
 # ---- 16. Loose match ----
 $matchResult = "N/A"
+$matchPassed = $false
 if ($textNonEmpty -and $ExpectedText) {
     # Case-insensitive loose matching: check if at least 2 expected words appear
     $expectedWords = $ExpectedText -split '\s+'
@@ -317,19 +339,38 @@ if ($textNonEmpty -and $ExpectedText) {
     $matchResult = "$matchedWords/$($expectedWords.Count) words matched ($matchPercent%)"
     Write-Log "[16/22] Expected: '$ExpectedText'"
     Write-Log "[16/22] Loose match: $matchResult"
-    if ($matchedWords -ge 2 -or $matchPercent -ge 20) {
-        Write-Log "[16/22] PASS - sufficient word match"
+    $matchPassed = ($matchedWords -ge 5 -and $matchPercent -ge 50)
+    if ($matchPassed) {
+        Write-Log "[16/22] PASS - sufficient word match ($matchedWords words, $matchPercent%)"
     } else {
-        Write-Log "[16/22] FAIL - insufficient word match"
+        Write-Log "[16/22] FAIL - insufficient word match ($matchedWords words, $matchPercent%), need >=5 words and >=50%"
     }
 }
 
-# ---- 17. Graceful shutdown via taskkill (process tree) ----
+# ---- 17. Graceful shutdown ----
 $shutdownStart = Get-Date
-$taskkillResult = taskkill /PID $runtimePID /T /F 2>&1
+$gracefulShutdown = $false
+$forceKillUsed = $false
+
+# Try graceful shutdown via API
+try {
+    $shutdownResp = Invoke-RestMethod -Uri "http://127.0.0.1:$RuntimePort/v1/shutdown" -Method Post -TimeoutSec 5 -ErrorAction Stop
+    Write-Log "[17/22] Shutdown API responded"
+    $gracefulShutdown = $true
+} catch {
+    Write-Log "[17/22] Shutdown API failed: $_"
+}
+
+# Wait up to 5 seconds for graceful exit
+if (-not (Wait-PidExit -procId $runtimePID -timeoutSeconds 5)) {
+    Write-Log "[17/22] Runtime still alive after graceful shutdown, using taskkill /T /F"
+    taskkill /PID $runtimePID /T /F 2>&1 | Out-Null
+    $forceKillUsed = $true
+}
+
 $shutdownEnd = Get-Date
 $shutdownMs = [math]::Round(($shutdownEnd - $shutdownStart).TotalMilliseconds)
-Write-Log "[17/22] taskkill /T /F on PID $runtimePID, took ${shutdownMs}ms"
+Write-Log "[17/22] Shutdown completed in ${shutdownMs}ms (graceful=$gracefulShutdown, forceKill=$forceKillUsed)"
 
 # ---- 18. Wait for Runtime PID to exit ----
 $runtimeExited = Wait-PidExit -procId $runtimePID -timeoutSeconds 10
@@ -359,7 +400,7 @@ if ($childPID -gt 0) {
 # ---- 20. Check port release (retry for TIME_WAIT) ----
 $runtimePortFree = $false
 $audioCppPortFree = $false
-for ($retry = 0; $retry -lt 6; $retry++) {
+for ($retry = 0; $retry -lt 15; $retry++) {
     $runtimePortFree = Test-PortFree -port $RuntimePort
     $audioCppPortFree = Test-PortFree -port $AudioCppPort
     if ($runtimePortFree -and $audioCppPortFree) { break }
@@ -376,27 +417,41 @@ $portsAfter = @{
     audiocpp_port_free = $audioCppPortFree
     checked_at = (Get-Date -Format 'o')
 } | ConvertTo-Json
-$portsAfter | Set-Content -Path (Join-Path $ArtifactsDir "ports-after.json") -Encoding UTF8
+Write-FileUtf8NoBom -path (Join-Path $ArtifactsDir "ports-after.json") -content $portsAfter
 
-# ---- Capture processes after ----
-$processesAfter = @()
-try {
-    $processesAfter = Get-Process | Select-Object Id, ProcessName, StartTime | ConvertTo-Json
-} catch {}
-$processesAfter | Set-Content -Path (Join-Path $ArtifactsDir "processes-after.json") -Encoding UTF8
+# ---- Capture process status ----
+$procSnapshot = @{
+    runtime = @{
+        pid = $runtimePID
+        alive = (Get-Process -Id $runtimePID -ErrorAction SilentlyContinue) -ne $null
+    }
+    audiocpp = @{
+        pid = $childPID
+        alive = (Get-Process -Id $childPID -ErrorAction SilentlyContinue) -ne $null
+    }
+} | ConvertTo-Json
+Write-FileUtf8NoBom -path (Join-Path $ArtifactsDir "process-status.json") -content $procSnapshot
+Write-Log "[proc] Process status saved"
 
 # ---- Generate result.md ----
 $endTime = Get-Date
 $totalMs = [math]::Round(($endTime - $startTime).TotalMilliseconds)
 $gitCommit = (git rev-parse HEAD 2>$null)
-if (-not $gitCommit) { $gitCommit = "unknown" }
+if (-not $gitCommit) {
+    Write-Host "REAL_SMOKE_FAIL: Could not determine git commit"
+    exit 1
+}
+# ---- Get audio.cpp upstream SHA ----
 $upstreamSha = "unknown"
-$submoduleStatus = git submodule status 2>$null
-if ($submoduleStatus) {
-    $match = $submoduleStatus | Select-String "audio.cpp"
-    if ($match) {
-        $upstreamSha = ($match -split '\s+' | Select-Object -First 1)
+try {
+    $upstreamSha = git -C (Join-Path $repoRoot "audio.cpp") rev-parse HEAD 2>$null
+    if (-not $upstreamSha -or $upstreamSha -eq "unknown") {
+        throw "Could not get audio.cpp HEAD"
     }
+    Write-Log "[upstream] audio.cpp SHA: $upstreamSha"
+} catch {
+    Write-Host "REAL_SMOKE_FAIL: Could not get audio.cpp upstream SHA: $_"
+    exit 1
 }
 $wavSha = "unknown"
 try { $wavSha = (Get-FileHash -Path $wavPath -Algorithm SHA256 -ErrorAction Stop).Hash } catch {} 
@@ -410,7 +465,7 @@ foreach ($mf in $requiredModels) {
 }
 $modelShaJson = $modelSha | ConvertTo-Json -Compress
 
-$finalPass = ($textNonEmpty -and $runtimeExited -and $childExited -and $runtimePortFree -and $audioCppPortFree)
+$finalPass = ($httpStatus -eq 200 -and $textNonEmpty -and $matchPassed -and ($childPID -gt 0) -and ($childState -eq "running") -and $runtimeExited -and $childExited -and $runtimePortFree -and $audioCppPortFree)
 
 $result = @"
 # Real ASR Smoke Test Result
@@ -434,16 +489,20 @@ $result = @"
 | Match Result | $matchResult |
 | Inference Duration | ${inferenceMs}ms |
 | Shutdown Duration | ${shutdownMs}ms |
+| Graceful Shutdown | $gracefulShutdown |
+| Force Kill Used | $forceKillUsed |
 | Runtime Exited Cleanly | $runtimeExited |
 | Child Exited Cleanly | $childExited |
+| Response Received | $responseReceived |
+| Response Parsed | $responseParsed |
 | Runtime Port Free | $runtimePortFree |
 | AudioCpp Port Free | $audioCppPortFree |
 
 ## Verdict
 
-**$(if ($finalPass) { '✅ REAL_SMOKE_PASS' } else { '❌ REAL_SMOKE_FAIL' })**
+**$(if ($finalPass) { 'REAL_SMOKE_PASS' } else { 'REAL_SMOKE_FAIL' })**
 "@
-$result | Set-Content -Path (Join-Path $ArtifactsDir "result.md") -Encoding UTF8
+Write-FileUtf8NoBom -path (Join-Path $ArtifactsDir "result.md") -content $result
 Write-Log "[result] Written to $(Join-Path $ArtifactsDir 'result.md')"
 
 Write-Log "=== REAL SMOKE TEST $(if ($finalPass) { 'PASS' } else { 'FAIL' }) ==="
