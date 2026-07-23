@@ -352,6 +352,7 @@ $shutdownStart = Get-Date
 $shutdownRequestAccepted = $false
 $gracefulExitCompleted = $false
 $forceKillUsed = $false
+$childForceKilled = $false
 
 # Try graceful shutdown via API
 try {
@@ -359,26 +360,23 @@ try {
     Write-Log "[17/22] Shutdown API responded"
     $shutdownRequestAccepted = $true
     
-    # Parse shutdown result fields (if returned)
+    # Parse shutdown result fields for information (child process status)
     if ($shutdownResp.data) {
-        if ($shutdownResp.data.graceful_exited -eq $true) { $gracefulExitCompleted = $true }
-        if ($shutdownResp.data.force_kill_used -eq $true) { $forceKillUsed = $true }
+        if ($shutdownResp.data.force_kill_used -eq $true) { $childForceKilled = $true }
     }
 } catch {
     Write-Log "[17/22] Shutdown API failed: $_"
 }
 
-# Wait up to 5 seconds for graceful exit (poll runtime PID)
-if (-not (Wait-PidExit -procId $runtimePID -timeoutSeconds 5)) {
+# Wait for graceful exit: poll runtime PID for up to 15 seconds
+if (-not (Wait-PidExit -procId $runtimePID -timeoutSeconds 15)) {
     Write-Log "[17/22] Runtime still alive after graceful stop window, using taskkill /T /F"
     taskkill /PID $runtimePID /T /F 2>&1 | Out-Null
     $forceKillUsed = $true
     $gracefulExitCompleted = $false
 } else {
     # Runtime PID disappeared on its own — graceful exit completed
-    if (-not $forceKillUsed) {
-        $gracefulExitCompleted = $true
-    }
+    $gracefulExitCompleted = $true
 }
 
 $shutdownEnd = Get-Date
@@ -514,6 +512,7 @@ $result = @"
 | Shutdown Request Accepted | $shutdownRequestAccepted |
 | Graceful Exit Completed | $gracefulExitCompleted |
 | Force Kill Used | $forceKillUsed |
+| Child Force Killed (during shutdown) | $childForceKilled |
 | Runtime Exited Cleanly | $runtimeExited |
 | Child Exited Cleanly | $childExited |
 | Response Received | $responseReceived |

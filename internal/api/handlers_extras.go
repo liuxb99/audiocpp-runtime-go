@@ -68,6 +68,7 @@ func (s *Server) handleListCapabilities(w http.ResponseWriter, r *http.Request) 
 // handleShutdown triggers graceful shutdown of the entire runtime.
 // It synchronously stops workers, the audiocpp child, saves state,
 // cleans up outputs, closes the database, then returns the shutdown result.
+// After the response is sent it signals the main goroutine to exit.
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	// Mark server as shutting down to reject new requests
 	s.shuttingDown.Store(true)
@@ -81,9 +82,16 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	// Execute full shutdown synchronously
 	result := s.runtimeRef.Shutdown(r.Context())
 
-	// Shutdown HTTP server asynchronously (after response is sent)
+	// Send response first, then signal main to exit
+	writeJSON(w, http.StatusOK, result)
+
+	// Signal main goroutine that API shutdown is complete
+	// so it can stop the HTTP server and exit the process.
+	// Use a goroutine to avoid blocking if nothing is listening.
 	go func() {
-		time.Sleep(100 * time.Millisecond)
+		// Small delay to let the HTTP response flush
+		time.Sleep(50 * time.Millisecond)
+		// Stop HTTP server gracefully
 		if s.httpServer != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -92,9 +100,9 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 				s.logger.Printf("[api] HTTP server shutdown error: %v", err)
 			}
 		}
+		// Notify main to exit
+		close(s.apiShutdownCh)
 	}()
-
-	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleAlign(w http.ResponseWriter, r *http.Request) {

@@ -64,24 +64,35 @@ func main() {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
 
-	log.Println("shutting down...")
+	// Wait for either OS signal or API shutdown request
+	select {
+	case <-quit:
+		log.Println("shutting down (signal)...")
 
-	// Mark server as shutting down before we begin the shutdown sequence
-	apiServer.SetShuttingDown()
+		// Mark server as shutting down before we begin the shutdown sequence
+		apiServer.SetShuttingDown()
 
-	// Use Runtime.Shutdown() which handles graceful child stop, force kill,
-	// state saving, cleanup, and database closing
-	result := rt.Shutdown(context.Background())
-	log.Printf("[main] shutdown result: request_accepted=%v graceful_exited=%v force_kill=%v runtime_exited=%v child_exited=%v",
-		result.RequestAccepted, result.GracefulExited, result.ForceKillUsed,
-		result.RuntimeExited, result.ChildExited)
+		// Use Runtime.Shutdown() which handles graceful child stop, force kill,
+		// state saving, cleanup, and database closing
+		result := rt.Shutdown(context.Background())
+		log.Printf("[main] shutdown result: request_accepted=%v graceful_exited=%v force_kill=%v runtime_exited=%v child_exited=%v",
+			result.RequestAccepted, result.GracefulExited, result.ForceKillUsed,
+			result.RuntimeExited, result.ChildExited)
 
-	// Then stop the HTTP server
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
-	if err := apiServer.Stop(shutdownCtx); err != nil {
-		log.Printf("api server shutdown error: %v", err)
+		// Then stop the HTTP server
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		if err := apiServer.Stop(shutdownCtx); err != nil {
+			log.Printf("api server shutdown error: %v", err)
+		}
+
+	case <-apiServer.ShutdownRequested():
+		// API handler already called rt.Shutdown() and closed HTTP server.
+		// Just wait briefly then exit the process naturally.
+		log.Println("shutting down (API request)...")
+		time.Sleep(200 * time.Millisecond)
 	}
+
+	log.Println("audiocpp-runtime exited")
 }

@@ -18,31 +18,39 @@ import (
 )
 
 type Server struct {
-	config       *config.Config
-	router       *mux.Router
-	audiocppCli  *audiocpp.Client
-	process      *audiocpp.Process
-	jobManager   *jobs.Manager
-	modelReg     *models.Registry
-	outputMgr    *outputs.Manager
-	runtimeRef   *runtime.Runtime
-	httpServer   *http.Server
-	logger       *log.Logger
-	startTime    time.Time
-	shuttingDown atomic.Bool
+	config          *config.Config
+	router          *mux.Router
+	audiocppCli     *audiocpp.Client
+	process         *audiocpp.Process
+	jobManager      *jobs.Manager
+	modelReg        *models.Registry
+	outputMgr       *outputs.Manager
+	runtimeRef      *runtime.Runtime
+	httpServer      *http.Server
+	logger          *log.Logger
+	startTime       time.Time
+	shuttingDown    atomic.Bool
+	apiShutdownCh   chan struct{}
+}
+
+// ShutdownRequested returns a channel that is closed when the API shutdown
+// handler has completed its work. Main should listen on this to exit.
+func (s *Server) ShutdownRequested() <-chan struct{} {
+	return s.apiShutdownCh
 }
 
 func NewServer(cfg *config.Config, ac *audiocpp.Client, proc *audiocpp.Process, jm *jobs.Manager, mr *models.Registry, om *outputs.Manager, rt *runtime.Runtime) *Server {
 	s := &Server{
-		config:      cfg,
-		audiocppCli: ac,
-		process:     proc,
-		jobManager:  jm,
-		modelReg:    mr,
-		outputMgr:   om,
-		runtimeRef:  rt,
-		logger:      log.Default(),
-		startTime:   time.Now(),
+		config:         cfg,
+		audiocppCli:    ac,
+		process:        proc,
+		jobManager:     jm,
+		modelReg:       mr,
+		outputMgr:      om,
+		runtimeRef:     rt,
+		logger:         log.Default(),
+		startTime:      time.Now(),
+		apiShutdownCh:  make(chan struct{}),
 	}
 	s.router = mux.NewRouter()
 	s.registerRoutes()
