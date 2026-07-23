@@ -423,7 +423,8 @@ func TestSetModelConfigLazyLoadDefault(t *testing.T) {
 
 func TestGeneratedConfigJSON(t *testing.T) {
 	cfgDir := t.TempDir()
-	p := NewProcess(cfgDir, "test.exe", "", "127.0.0.1", 9999, 0, 1, "cpu", false, 0)
+	p := NewProcess(cfgDir, testBinaryPath(t), "", "127.0.0.1", 9999, 0, 1, "cpu", false, 0)
+	p.ExtraEnv = []string{"FAKE_AUDIOCPP_CHILD=1"}
 
 	p.SetModelSpecOverride("/resolved/model_specs")
 	p.SetLazyLoad(false)

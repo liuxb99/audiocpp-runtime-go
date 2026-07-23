@@ -6,7 +6,7 @@
 | Total Duration | 10337ms |
 | Tested Source Commit | 074d4e72ec735842b7f8a2c8bfcea7bfb67e7872 |
 | Evidence Generated At | 2026-07-23T21:34:43.3972762+08:00 |
-| Evidence Commit | pending |
+| Evidence Commit | af2db6b220afd0f162bcb25e530c1264c1a351c3 |
 | Go Runtime Binary | D:\AI-Tools\audio-cpp-runtime-go\bin\audiocpp-runtime.exe |
 | audiocpp_server Binary | D:\AI-Tools\audio-cpp-runtime-go\audio.cpp\build\windows-cpu-release\bin\audiocpp_server.exe |
 | audio.cpp Upstream SHA | cd91110b39ad48cdb594d893687e9d2ae8ce0dbf |
