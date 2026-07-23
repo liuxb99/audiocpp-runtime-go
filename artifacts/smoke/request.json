@@ -3,5 +3,5 @@
     "method":  "POST",
     "url":  "http://127.0.0.1:18091/v1/audio/transcriptions",
     "wav_path":  "D:\\AI-Tools\\audio-cpp-runtime-go\\testdata\\audio\\english_short_16k.wav",
-    "timestamp":  "2026-07-23T07:29:16.6611798+08:00"
+    "timestamp":  "2026-07-23T09:17:23.9039236+08:00"
 }
