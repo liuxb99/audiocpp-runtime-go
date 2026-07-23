@@ -2,9 +2,9 @@
     "data":  {
                  "text":  "the quickbrown fox jumps over the lazy blog",
                  "timing":  {
-                                "wall_ms":  129.033,
+                                "wall_ms":  130.94,
                                 "audio_duration_ms":  3849.44,
-                                "rtf":  0.0335199
+                                "rtf":  0.0340152
                             }
              }
 }

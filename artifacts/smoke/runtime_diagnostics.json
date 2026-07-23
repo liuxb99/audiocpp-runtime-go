@@ -1,15 +1,15 @@
 {
-    "startup_time":  "2026-07-23T22:01:53.3463753+08:00",
-    "ready_time":  "2026-07-23T22:01:53.8799161+08:00",
-    "child_start_time":  "2026-07-23T22:01:53.3767326+08:00",
+    "startup_time":  "2026-07-24T00:32:07.981967+08:00",
+    "ready_time":  "2026-07-24T00:32:08.5227018+08:00",
+    "child_start_time":  "2026-07-24T00:32:08.5227018+08:00",
     "shutdown_time":  "0001-01-01T00:00:00Z",
     "worker_count":  1,
     "queue_length":  0,
     "current_state":  4,
     "current_state_str":  "running",
-    "current_backend":  "cpu",
+    "current_backend":  "audiocpp",
     "current_model":  "citrinet-asr",
-    "child_pid":  10232,
-    "memory_usage_bytes":  1713240,
+    "child_pid":  12796,
+    "memory_usage_bytes":  1734520,
     "goroutine_count":  12
 }

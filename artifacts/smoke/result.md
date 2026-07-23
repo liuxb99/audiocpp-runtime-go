@@ -2,25 +2,25 @@
 
 | Field | Value |
 |-------|-------|
-| Execution Time | 2026-07-23 22:01:52 |
-| Total Duration | 10502ms |
-| Tested Source Commit | b7995808bd32692990a0bd6c965ca438100c7e62 |
-| Evidence Generated At | 2026-07-23T22:02:04.5646809+08:00 |
-| Evidence Commit | 95050d9121cccc1f3733e4332efd82f316707b5f |
+| Execution Time | 2026-07-24 00:32:06 |
+| Total Duration | 11594ms |
+| Tested Source Commit | a7fcde7a566ab996c6cf5b920fd339e24be6ffdc |
+| Evidence Generated At | 2026-07-24T00:32:18.4794355+08:00 |
+| Evidence Commit | pending |
 | Go Runtime Binary | D:\AI-Tools\audio-cpp-runtime-go\bin\audiocpp-runtime.exe |
 | audiocpp_server Binary | D:\AI-Tools\audio-cpp-runtime-go\audio.cpp\build\windows-cpu-release\bin\audiocpp_server.exe |
 | audio.cpp Upstream SHA | cd91110b39ad48cdb594d893687e9d2ae8ce0dbf |
 | Citrinet Model SHA256 | {"citrinet_256.safetensors":"15AA3209AE85DE5197685D61A676BE66CD736F1448E712E3BC826F175B0EF810","citrinet_256_config.json":"2FD0FB838B92917DA5B0852885463D5FA0DFB5D2DC0415D7E5AEAE1F17631789","citrinet_256_tokenizer.model":"A7DBB4EAC08E0E7713D23C0E1B18C0A52E2278C540186728A249B77DC63D1177"} |
 | Input WAV SHA256 | C60AE0337844C9B4071E242DA4F916EF7113BE0AE90AF27971152879653EBC93 |
-| Runtime PID | 6608 |
-| Child PID | 10232 |
+| Runtime PID | 11540 |
+| Child PID | 12796 |
 | Request URL | POST http://127.0.0.1:18091/v1/audio/transcriptions |
 | HTTP Status | 200 |
 | Transcription | the quickbrown fox jumps over the lazy blog |
 | Expected Transcription | The quick brown fox jumps over the lazy dog |
 | Match Result | 6/9 words matched (66.7%) |
-| Inference Duration | 157ms |
-| Shutdown Duration | 6734ms |
+| Inference Duration | 166ms |
+| Shutdown Duration | 7344ms |
 | Shutdown Request Accepted | True |
 | Runtime Graceful Exit Completed | True |
 | External Force Kill Used | False |
