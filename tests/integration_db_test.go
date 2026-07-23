@@ -50,7 +50,7 @@ func newTestHarness(t *testing.T) (*api.Server, *fakeAudioCppServer, *storage.DB
 	jobRepo := storage.NewJobsRepository(db)
 	outputRepo := storage.NewOutputsRepository(db)
 	outputMgr := outputs.NewManager(filepath.Join(dbDir, "outputs"), 30, outputRepo)
-	jobMgr := jobs.NewManager(jobRepo)
+	jobMgr := jobs.NewManager(jobRepo, 100)
 
 	workerPool := jobs.NewWorkerPool(jobMgr, ac, 2)
 	workerPool.Start()
@@ -516,7 +516,7 @@ func TestJobJobLifecycle(t *testing.T) {
 	db.RunMigrations()
 
 	repo := storage.NewJobsRepository(db)
-	mgr := jobs.NewManager(repo)
+	mgr := jobs.NewManager(repo, 100)
 
 	job := &jobs.Job{
 		ID:      "test-job-1",

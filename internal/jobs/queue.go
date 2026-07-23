@@ -2,8 +2,12 @@ package jobs
 
 import (
 	"container/heap"
+	"errors"
 	"sync"
 )
+
+// ErrQueueFull is returned when the queue has reached its capacity limit.
+var ErrQueueFull = errors.New("queue is full")
 
 type queueItem struct {
 	job       *Job
@@ -46,9 +50,10 @@ func (h *priorityHeap) Pop() interface{} {
 }
 
 type Queue struct {
-	mu      sync.Mutex
-	heap    priorityHeap
-	counter int64
+	mu       sync.Mutex
+	heap     priorityHeap
+	counter  int64
+	capacity int // 0 means unlimited
 }
 
 func NewQueue() *Queue {
@@ -57,15 +62,32 @@ func NewQueue() *Queue {
 	}
 }
 
-func (q *Queue) Enqueue(job *Job) {
+// NewQueueWithCapacity creates a queue with a maximum capacity.
+// capacity <= 0 means unlimited.
+func NewQueueWithCapacity(capacity int) *Queue {
+	return &Queue{
+		heap:     make(priorityHeap, 0),
+		capacity: capacity,
+	}
+}
+
+// Enqueue adds a job to the queue. Returns ErrQueueFull if the queue has
+// reached its capacity limit.
+func (q *Queue) Enqueue(job *Job) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
+	if q.capacity > 0 && q.heap.Len() >= q.capacity {
+		return ErrQueueFull
+	}
+
 	q.counter++
 	item := &queueItem{
 		job:       job,
 		enqueueAt: q.counter,
 	}
 	heap.Push(&q.heap, item)
+	return nil
 }
 
 func (q *Queue) Dequeue() *Job {
@@ -91,6 +113,12 @@ func (q *Queue) Len() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.heap.Len()
+}
+
+func (q *Queue) Cap() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.capacity
 }
 
 func (q *Queue) Remove(id string) bool {

@@ -68,8 +68,13 @@ type BackendConfig struct {
 }
 
 type JobsConfig struct {
-	Workers   int `yaml:"workers"`
-	QueueSize int `yaml:"queue_size"`
+	Workers               int `yaml:"workers"`
+	QueueSize             int `yaml:"queue_size"`
+	DefaultTimeoutSeconds int `yaml:"default_timeout_seconds"`
+	MaxAttempts           int `yaml:"max_attempts"`
+	RetryInitialDelayMs   int `yaml:"retry_initial_delay_ms"`
+	RetryMaxDelayMs       int `yaml:"retry_max_delay_ms"`
+	QueueCapacity         int `yaml:"queue_capacity"`
 }
 
 type Config struct {
@@ -118,8 +123,13 @@ func DefaultConfig() *Config {
 			RetainDays: 30,
 		},
 		Jobs: JobsConfig{
-			Workers:   1,
-			QueueSize: 100,
+			Workers:               1,
+			QueueSize:             100,
+			DefaultTimeoutSeconds: 300,
+			MaxAttempts:           3,
+			RetryInitialDelayMs:   500,
+			RetryMaxDelayMs:       5000,
+			QueueCapacity:         1000,
 		},
 	}
 }
@@ -165,6 +175,21 @@ func (c *Config) Validate(baseDir string) error {
 	}
 	if c.Jobs.QueueSize < 1 {
 		errs = append(errs, "jobs.queue_size must be >= 1")
+	}
+	if c.Jobs.DefaultTimeoutSeconds < 10 {
+		errs = append(errs, "jobs.default_timeout_seconds must be >= 10")
+	}
+	if c.Jobs.MaxAttempts < 1 {
+		errs = append(errs, "jobs.max_attempts must be >= 1")
+	}
+	if c.Jobs.RetryInitialDelayMs < 100 {
+		errs = append(errs, "jobs.retry_initial_delay_ms must be >= 100")
+	}
+	if c.Jobs.RetryMaxDelayMs < c.Jobs.RetryInitialDelayMs {
+		errs = append(errs, "jobs.retry_max_delay_ms must be >= retry_initial_delay_ms")
+	}
+	if c.Jobs.QueueCapacity < 1 {
+		errs = append(errs, "jobs.queue_capacity must be >= 1")
 	}
 	if c.Outputs.RetainDays < 0 {
 		errs = append(errs, "outputs.retain_days must be >= 0")

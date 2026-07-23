@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/liuxb99/audiocpp-runtime-go/internal/audiocpp"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/backend"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/runtime"
 )
 
@@ -31,7 +31,10 @@ func (s *Server) handleListVoices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGenericTask(w http.ResponseWriter, r *http.Request) {
-	var req audiocpp.TaskRequest
+	var req struct {
+		Model   string                 `json:"model"`
+		Request map[string]interface{} `json:"request"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "Invalid JSON body")
 		return
@@ -42,10 +45,33 @@ func (s *Server) handleGenericTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.audiocppCli.RunTask(r.Context(), &req)
+	// Use BackendManager instead of direct audiocppCli
+	bm := s.runtimeRef.BackendManager()
+	if bm == nil {
+		writeError(w, http.StatusInternalServerError, "NO_BACKEND", "backend not available")
+		return
+	}
+
+	resp, err := bm.Submit(r.Context(), &backend.InferenceRequest{
+		Model:    req.Model,
+		TaskType: "task",
+		Options:  req.Request,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "AUDIOCPP_ERROR", err.Error())
 		return
+	}
+
+	// Convert InferenceResponse back to TaskResponse-like format for API compat
+	result := make(map[string]interface{})
+	if resp.Text != "" {
+		result["text"] = resp.Text
+	}
+	if len(resp.Audio) > 0 {
+		result["audio"] = resp.Audio
+	}
+	for k, v := range resp.Data {
+		result[k] = v
 	}
 
 	writeJSON(w, http.StatusOK, result)
@@ -154,19 +180,40 @@ func (s *Server) handleAlign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	taskReq := &audiocpp.TaskRequest{
-		Model: req.Model,
-		Request: map[string]interface{}{
-			"audio":    req.Audio,
-			"text":     req.Text,
-			"language": req.Language,
-		},
+	// Use BackendManager instead of direct audiocppCli
+	bm := s.runtimeRef.BackendManager()
+	if bm == nil {
+		writeError(w, http.StatusInternalServerError, "NO_BACKEND", "backend not available")
+		return
 	}
 
-	result, err := s.audiocppCli.RunTask(r.Context(), taskReq)
+	opts := make(map[string]interface{})
+	opts["audio"] = req.Audio
+	opts["text"] = req.Text
+	if req.Language != "" {
+		opts["language"] = req.Language
+	}
+
+	resp, err := bm.Submit(r.Context(), &backend.InferenceRequest{
+		Model:    req.Model,
+		TaskType: "task",
+		Options:  opts,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "AUDIOCPP_ERROR", err.Error())
 		return
+	}
+
+	// Convert InferenceResponse back to task result for API compat
+	result := make(map[string]interface{})
+	if resp.Text != "" {
+		result["text"] = resp.Text
+	}
+	if len(resp.Audio) > 0 {
+		result["audio"] = resp.Audio
+	}
+	for k, v := range resp.Data {
+		result[k] = v
 	}
 
 	writeJSON(w, http.StatusOK, result)

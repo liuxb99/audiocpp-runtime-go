@@ -46,6 +46,21 @@ CREATE TABLE IF NOT EXISTS outputs (
     FOREIGN KEY (job_id) REFERENCES jobs(id)
 );`,
 	},
+	{
+		version: 2,
+		sql: `
+ALTER TABLE jobs ADD COLUMN worker_id TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN claimed_at TIMESTAMP;
+ALTER TABLE jobs ADD COLUMN lease_until TIMESTAMP;
+ALTER TABLE jobs ADD COLUMN attempt INTEGER DEFAULT 0;
+ALTER TABLE jobs ADD COLUMN backend_name TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN backend_version TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN trace_id TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN output_ref TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN error_code TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN error_message TEXT DEFAULT '';
+ALTER TABLE jobs ADD COLUMN duration_ms INTEGER;`,
+	},
 }
 
 func (db *DB) RunMigrations() error {

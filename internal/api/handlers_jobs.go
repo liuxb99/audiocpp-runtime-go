@@ -106,12 +106,14 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if job.Status.IsTerminal() {
-		writeError(w, http.StatusBadRequest, "INVALID_STATE", fmt.Sprintf("Job %s is already in terminal state: %s", id, job.Status))
+		// Idempotent: already terminal, return OK
+		writeJSON(w, http.StatusOK, job)
 		return
 	}
 
+	// S8 — CancelRequested flow: Pending/Queued → Canceled, Running → CancelRequested
 	if err := s.jobManager.CancelJob(job); err != nil {
-		writeError(w, http.StatusInternalServerError, "CANCEL_ERROR", err.Error())
+		writeError(w, http.StatusConflict, "CANCEL_ERROR", err.Error())
 		return
 	}
 

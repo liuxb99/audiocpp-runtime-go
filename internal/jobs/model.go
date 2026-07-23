@@ -41,37 +41,11 @@ func (t Type) IsValid() bool {
 
 type Status string
 
+// Backward-compatible aliases
 const (
-	StatusPending   Status = "pending"
-	StatusQueued    Status = "queued"
-	StatusRunning   Status = "running"
-	StatusCompleted Status = "completed"
-	StatusFailed    Status = "failed"
-	StatusCancelled Status = "cancelled"
+	StatusCompleted Status = "succeeded"
+	StatusCancelled Status = "canceled"
 )
-
-var validStatuses = map[Status]bool{
-	StatusPending:   true,
-	StatusQueued:    true,
-	StatusRunning:   true,
-	StatusCompleted: true,
-	StatusFailed:    true,
-	StatusCancelled: true,
-}
-
-var terminalStatuses = map[Status]bool{
-	StatusCompleted: true,
-	StatusFailed:    true,
-	StatusCancelled: true,
-}
-
-func (s Status) IsValid() bool {
-	return validStatuses[s]
-}
-
-func (s Status) IsTerminal() bool {
-	return terminalStatuses[s]
-}
 
 type Job struct {
 	ID          string                 `json:"id"`
@@ -86,6 +60,20 @@ type Job struct {
 	StartedAt   *time.Time             `json:"started_at,omitempty"`
 	CompletedAt *time.Time             `json:"completed_at,omitempty"`
 	Priority    int                    `json:"priority"`
+
+	// S6 — Job Ownership / Lease
+	WorkerID   string     `json:"worker_id,omitempty"`
+	ClaimedAt  *time.Time `json:"claimed_at,omitempty"`
+	LeaseUntil *time.Time `json:"lease_until,omitempty"`
+	Attempt    int        `json:"attempt"`
+
+	// S11 — Result persistence
+	BackendName    string `json:"backend_name,omitempty"`
+	BackendVersion string `json:"backend_version,omitempty"`
+	TraceID        string `json:"trace_id,omitempty"`
+	OutputRef      string `json:"output_ref,omitempty"`
+	ErrorCode      string `json:"error_code,omitempty"`
+	ErrorMessage   string `json:"error_message,omitempty"`
 }
 
 func (j *Job) ToRecord() *storage.JobRecord {
@@ -105,6 +93,12 @@ func (j *Job) ToRecord() *storage.JobRecord {
 		errStr = &e
 	}
 
+	var durationMs *int64
+	if j.StartedAt != nil && j.CompletedAt != nil && !j.StartedAt.IsZero() && !j.CompletedAt.IsZero() {
+		d := j.CompletedAt.Sub(*j.StartedAt).Milliseconds()
+		durationMs = &d
+	}
+
 	return &storage.JobRecord{
 		ID:          j.ID,
 		Type:        string(j.Type),
@@ -118,6 +112,19 @@ func (j *Job) ToRecord() *storage.JobRecord {
 		StartedAt:   j.StartedAt,
 		CompletedAt: j.CompletedAt,
 		Priority:    j.Priority,
+
+		WorkerID:   j.WorkerID,
+		ClaimedAt:  j.ClaimedAt,
+		LeaseUntil: j.LeaseUntil,
+		Attempt:    j.Attempt,
+
+		BackendName:    j.BackendName,
+		BackendVersion: j.BackendVersion,
+		TraceID:        j.TraceID,
+		OutputRef:      j.OutputRef,
+		ErrorCode:      j.ErrorCode,
+		ErrorMessage:   j.ErrorMessage,
+		DurationMs:     durationMs,
 	}
 }
 
@@ -138,6 +145,18 @@ func JobFromRecord(r *storage.JobRecord) *Job {
 		StartedAt:   r.StartedAt,
 		CompletedAt: r.CompletedAt,
 		Priority:    r.Priority,
+
+		WorkerID:   r.WorkerID,
+		ClaimedAt:  r.ClaimedAt,
+		LeaseUntil: r.LeaseUntil,
+		Attempt:    r.Attempt,
+
+		BackendName:    r.BackendName,
+		BackendVersion: r.BackendVersion,
+		TraceID:        r.TraceID,
+		OutputRef:      r.OutputRef,
+		ErrorCode:      r.ErrorCode,
+		ErrorMessage:   r.ErrorMessage,
 	}
 
 	if r.Result != nil {

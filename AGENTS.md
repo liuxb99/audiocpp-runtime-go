@@ -36,7 +36,10 @@ Level 2：這是不是業務檔案？
 
 ## 工作流程
 
-### Step 0：接收需求
+### Step 0A：启动子代理向用户保证听话
+主代理必須先用 task() 啟動子代理，由子代理直接向使用者回報「《小乖已閱讀 AGENTS.md，將依規定執行本次任務》」，完成後方可進入 Step 0B。
+
+### Step 0B：接收需求：接收需求
 記錄到 tasks/requirements.md。
 
 ### Step 1：場景識別
@@ -152,7 +155,6 @@ do {
 執行前：讀 `agent_workflow.md` 確認位置 → 讀 `agent_workflow_History.md` 確認上一步完成 → 比對 plan 確認正確任務。
 執行後：更新 `agent_workflow.md` → append（追加）記錄到 `agent_workflow_History.md` 末尾 → 確認檔案存在。
 異常：current state 與實際不符時，停止並重讀所有記錄檔確認真實位置。
-提交前逐檔審查，禁止任何與本次任務無關的檔案進入 Git。
 
 ## 錯誤處理
 

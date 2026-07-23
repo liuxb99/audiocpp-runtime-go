@@ -11,6 +11,7 @@ import (
 	"github.com/liuxb99/audiocpp-runtime-go/internal/backend"
 	audiocppadapter "github.com/liuxb99/audiocpp-runtime-go/internal/backend/audiocpp"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/config"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/execution"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/jobs"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/models"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/outputs"
@@ -101,7 +102,7 @@ func (r *Runtime) Init(ctx context.Context) error {
 	}
 
 	r.outputMgr = outputs.NewManager(r.cfg.Outputs.RootDir, r.cfg.Outputs.RetainDays, r.outputRepo)
-	r.jobMgr = jobs.NewManager(r.jobRepo)
+	r.jobMgr = jobs.NewManager(r.jobRepo, r.cfg.Jobs.QueueCapacity)
 
 	r.proc = audiocpp.NewProcess(
 		"",
@@ -204,7 +205,24 @@ func (r *Runtime) StartAudioCpp(ctx context.Context) error {
 }
 
 func (r *Runtime) StartWorkers(count int) {
-	r.workerPool = jobs.NewWorkerPool(r.jobMgr, r.client, count)
+	// 建立 DefaultExecutor，透過 BackendManager 執行 Job
+	mapper := execution.NewDefaultMapper()
+	gate := execution.NewDefaultGate(r.backendMgr)
+	executor := execution.NewDefaultExecutor(r.backendMgr, mapper, gate)
+	jobExecutor := execution.NewJobExecutorAdapter(executor)
+
+	r.workerPool = jobs.NewWorkerPool(r.jobMgr, jobExecutor, count)
+	// Apply configuration from config
+	timeout := time.Duration(r.cfg.Jobs.DefaultTimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	r.workerPool.WithConfig(
+		timeout,
+		r.cfg.Jobs.MaxAttempts,
+		time.Duration(r.cfg.Jobs.RetryInitialDelayMs)*time.Millisecond,
+		time.Duration(r.cfg.Jobs.RetryMaxDelayMs)*time.Millisecond,
+	)
 	r.workerPool.Start()
 
 	if err := r.transition(StateReady, StateRunning); err != nil {

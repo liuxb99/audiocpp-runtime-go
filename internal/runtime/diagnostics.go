@@ -7,6 +7,29 @@ import (
 	"time"
 )
 
+// JobStats contains job execution statistics for diagnostics.
+type JobStats struct {
+	QueueLength   int `json:"queue_length"`
+	QueueCapacity int `json:"queue_capacity"`
+	ActiveWorkers int `json:"active_workers"`
+	RunningJobs   int `json:"running_jobs"`
+	CompletedJobs int `json:"completed_jobs"`
+	FailedJobs    int `json:"failed_jobs"`
+	CanceledJobs  int `json:"canceled_jobs"`
+	TimedOutJobs  int `json:"timed_out_jobs"`
+	RetryWaitJobs int `json:"retry_waiting_jobs"`
+}
+
+// ActiveJobSummary contains safe fields of a running job for diagnostics.
+type ActiveJobSummary struct {
+	JobID     string    `json:"job_id"`
+	TaskType  string    `json:"task_type"`
+	WorkerID  string    `json:"worker_id"`
+	Attempt   int       `json:"attempt"`
+	StartedAt time.Time `json:"started_at"`
+	Deadline  time.Time `json:"deadline"`
+}
+
 type Diagnostics struct {
 	StartupTime     time.Time            `json:"startup_time"`
 	ReadyTime       time.Time            `json:"ready_time"`
@@ -22,6 +45,8 @@ type Diagnostics struct {
 	MemoryUsage     int64                `json:"memory_usage_bytes"`
 	GoroutineCount  int                  `json:"goroutine_count"`
 	ShutdownSteps   []ShutdownStepResult `json:"shutdown_steps,omitempty"`
+	Jobs            *JobStats            `json:"jobs,omitempty"`
+	ActiveJobs      []ActiveJobSummary   `json:"active_jobs,omitempty"`
 }
 
 func (r *Runtime) Diagnostics() Diagnostics {
@@ -53,8 +78,49 @@ func (r *Runtime) Diagnostics() Diagnostics {
 		workerCount = r.cfg.Jobs.Workers
 	}
 	queueLen := 0
+	queueCap := 0
+	var jobStats *JobStats
+	var activeJobs []ActiveJobSummary
 	if r.jobMgr != nil {
 		queueLen = r.jobMgr.QueueLen()
+		queueCap = r.jobMgr.QueueCapacity()
+
+		// Collect job counts by status
+		if counts, err := r.jobMgr.CountByStatus(); err == nil {
+			jobStats = &JobStats{
+				QueueLength:   queueLen,
+				QueueCapacity: queueCap,
+				ActiveWorkers: workerCount,
+				RunningJobs:   counts["running"],
+				CompletedJobs: counts["succeeded"],
+				FailedJobs:    counts["failed"],
+				CanceledJobs:  counts["canceled"],
+				TimedOutJobs:  counts["timed_out"],
+				RetryWaitJobs: counts["retry_waiting"],
+			}
+		}
+
+		// Collect active jobs (running) — safe fields only
+		if runningJobs, err := r.jobMgr.ActiveJobs(); err == nil {
+			for _, j := range runningJobs {
+				startedAt := time.Time{}
+				if j.StartedAt != nil {
+					startedAt = *j.StartedAt
+				}
+				deadline := time.Time{}
+				if j.LeaseUntil != nil {
+					deadline = *j.LeaseUntil
+				}
+				activeJobs = append(activeJobs, ActiveJobSummary{
+					JobID:     j.ID,
+					TaskType:  string(j.Type),
+					WorkerID:  j.WorkerID,
+					Attempt:   j.Attempt,
+					StartedAt: startedAt,
+					Deadline:  deadline,
+				})
+			}
+		}
 	}
 
 	var memStats runtime.MemStats
@@ -74,6 +140,8 @@ func (r *Runtime) Diagnostics() Diagnostics {
 		ChildPID:        pid,
 		MemoryUsage:     int64(memStats.Alloc),
 		GoroutineCount:  runtime.NumGoroutine(),
+		Jobs:            jobStats,
+		ActiveJobs:      activeJobs,
 	}
 
 	if r.lastSchedule != nil {

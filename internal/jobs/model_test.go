@@ -16,7 +16,7 @@ func TestJobToRecord(t *testing.T) {
 	job := &Job{
 		ID:      "job-1",
 		Type:    TypeTTS,
-		Status:  StatusCompleted,
+		Status:  StatusSucceeded,
 		ModelID: "model-1",
 		Request: map[string]interface{}{
 			"text":   "hello",
@@ -43,8 +43,8 @@ func TestJobToRecord(t *testing.T) {
 	if rec.Type != "tts" {
 		t.Errorf("Type: got %q, want %q", rec.Type, "tts")
 	}
-	if rec.Status != "completed" {
-		t.Errorf("Status: got %q, want %q", rec.Status, "completed")
+	if rec.Status != "succeeded" {
+		t.Errorf("Status: got %q, want %q", rec.Status, "succeeded")
 	}
 	if rec.ModelID != "model-1" {
 		t.Errorf("ModelID: got %q, want %q", rec.ModelID, "model-1")
@@ -281,7 +281,8 @@ func TestTypeIsValid_InvalidType(t *testing.T) {
 func TestStatusIsValid_ValidStatuses(t *testing.T) {
 	valid := []Status{
 		StatusPending, StatusQueued, StatusRunning,
-		StatusCompleted, StatusFailed, StatusCancelled,
+		StatusSucceeded, StatusFailed, StatusCanceled,
+		StatusCancelRequested, StatusRetryWaiting, StatusTimedOut,
 	}
 	for _, s := range valid {
 		if !s.IsValid() {
@@ -300,7 +301,7 @@ func TestStatusIsValid_InvalidStatus(t *testing.T) {
 }
 
 func TestStatusIsTerminal_TerminalStatuses(t *testing.T) {
-	terminal := []Status{StatusCompleted, StatusFailed, StatusCancelled}
+	terminal := []Status{StatusSucceeded, StatusCanceled, StatusTimedOut}
 	for _, s := range terminal {
 		if !s.IsTerminal() {
 			t.Errorf("expected %q to be terminal", s)
@@ -309,7 +310,7 @@ func TestStatusIsTerminal_TerminalStatuses(t *testing.T) {
 }
 
 func TestStatusIsTerminal_NonTerminalStatuses(t *testing.T) {
-	nonTerminal := []Status{StatusPending, StatusQueued, StatusRunning}
+	nonTerminal := []Status{StatusPending, StatusQueued, StatusRunning, StatusCancelRequested, StatusRetryWaiting}
 	for _, s := range nonTerminal {
 		if s.IsTerminal() {
 			t.Errorf("expected %q to be non-terminal", s)
