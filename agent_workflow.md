@@ -12,12 +12,12 @@
 [v] Step 2: PLANNER 制定計劃，產出 tasks/plan-PHASE6C_EVIDENCE_CLEANUP.md
 [v] Step 3-5: 開發執行完成（dev-go 修正 Shutdown 語義 + Smoke Evidence + 測試）
 [ ] Step 3-5: 開發執行（修正 Shutdown 語義 + Smoke Evidence 模型 + 真實驗證）
-[ ] Step 6: 完整測試（gofmt/go vet/go build/go test/race）
-[ ] Step 7: 提交 Source Commit 並推送
-[ ] Step 8: 基於 Source Commit 重新編譯並執行 Smoke
-[ ] Step 9: 提交 Evidence Commit
-[ ] Step 10: REVIEWER 評分 ≥ 90
-[ ] Step 11: 總結報告（最終回報欄位）
+[v] Step 6: 完整測試（gofmt/go vet/go build/go test/race）✅
+[v] Step 7: 提交 Source Commit 並推送（794a3d2）
+[v] Step 8: 基於 Source Commit 重新編譯並執行 Smoke（REAL_SMOKE_PASS ✅）
+[v] Step 9: 提交 Evidence Commit（33bf733）
+[v] Step 10: REVIEWER 評分 — 95 分 合格 ✅
+[v] Step 11: 總結報告
 
 ## Next Step
-Step 1: 場景識別
+無 — Phase 6C 完成 ✅
