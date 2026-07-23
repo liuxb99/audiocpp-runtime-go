@@ -278,6 +278,49 @@ func (p *Process) StopGraceful() bool {
 	return false
 }
 
+// ForceStop immediately kills the child process tree and sets state to Stopped.
+// Unlike Stop() which also uses KillProcessTree, ForceStop uses a shorter
+// supervisor deadline and is suitable for tests that need aggressive cleanup.
+func (p *Process) ForceStop() error {
+	p.stopping.Store(true)
+
+	p.genMu.Lock()
+	gen := p.current
+	p.current = nil
+	p.genMu.Unlock()
+
+	if gen == nil {
+		p.state.Store(int32(StateStopped))
+		return nil
+	}
+
+	if gen.cmd != nil && gen.cmd.Process != nil {
+		log.Printf("[audiocpp] force stopping server (pid=%d)", gen.pid)
+		if err := platform.KillProcessTree(gen.pid); err != nil {
+			log.Printf("[audiocpp] force kill error: %v", err)
+		}
+	}
+
+	gen.cancel()
+
+	select {
+	case <-gen.stopCh:
+	default:
+		close(gen.stopCh)
+	}
+
+	tctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	select {
+	case <-gen.doneCh:
+	case <-tctx.Done():
+		log.Printf("[audiocpp] force stop timeout waiting for supervisor")
+	}
+
+	p.state.Store(int32(StateStopped))
+	return nil
+}
+
 func (p *Process) Restart(lifetimeCtx context.Context) error {
 	log.Printf("[audiocpp] restarting server")
 	if err := p.Stop(); err != nil {
