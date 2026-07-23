@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -123,6 +124,29 @@ func ProcessExists(pid int) bool {
 		return false
 	}
 	return exitCode == 259 // STILL_ACTIVE
+}
+
+// StopGraceful sends a graceful stop signal to a process without force-killing it.
+// On Windows this uses taskkill without /F; the caller should then poll ProcessExists
+// to confirm exit.
+func StopGraceful(pid int) error {
+	if pid <= 0 {
+		return errors.New("invalid process id")
+	}
+	kill := exec.Command("taskkill", "/PID", fmt.Sprintf("%d", pid))
+	return kill.Run()
+}
+
+// WaitProcessExit polls ProcessExists up to timeout and returns true if the process exited.
+func WaitProcessExit(pid int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !ProcessExists(pid) {
+			return true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return false
 }
 
 func FindExecutable(name string) string {

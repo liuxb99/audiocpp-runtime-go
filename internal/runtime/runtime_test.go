@@ -126,8 +126,9 @@ func TestRuntimeStartsAudioCpp(t *testing.T) {
 
 	rt.StartWorkers(cfg.Jobs.Workers)
 
-	if err := rt.Shutdown(ctx); err != nil {
-		t.Fatalf("Shutdown: %v", err)
+	result := rt.Shutdown(ctx)
+	if !result.RuntimeExited {
+		t.Fatal("expected RuntimeExited to be true after Shutdown")
 	}
 
 	deadline := time.Now().Add(3 * time.Second)
@@ -166,8 +167,12 @@ func TestRuntimeShutdownStopsAudioCpp(t *testing.T) {
 		t.Fatal("expected non-zero PID")
 	}
 
-	if err := rt.Shutdown(ctx); err != nil {
-		t.Fatalf("Shutdown: %v", err)
+	result := rt.Shutdown(ctx)
+	if !result.RuntimeExited {
+		t.Fatal("expected RuntimeExited to be true after Shutdown")
+	}
+	if !result.ChildExited {
+		t.Log("ChildExited is false — may still be alive, checking...")
 	}
 
 	deadline := time.Now().Add(3 * time.Second)

@@ -12,6 +12,7 @@ import (
 	"github.com/liuxb99/audiocpp-runtime-go/internal/jobs"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/models"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/outputs"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/platform"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/storage"
 )
 
@@ -35,6 +36,15 @@ type Runtime struct {
 	lifetimeCnl context.CancelFunc
 	startTime   time.Time
 	started     bool
+}
+
+// ShutdownResult captures the outcome of a Runtime.Shutdown call.
+type ShutdownResult struct {
+	RequestAccepted bool `json:"request_accepted"`
+	GracefulExited  bool `json:"graceful_exited"`
+	ForceKillUsed   bool `json:"force_kill_used"`
+	RuntimeExited   bool `json:"runtime_exited"`
+	ChildExited     bool `json:"child_exited"`
 }
 
 func New(cfg *config.Config) *Runtime {
@@ -165,44 +175,78 @@ func (r *Runtime) StopWorkers() {
 	}
 }
 
-func (r *Runtime) Shutdown(ctx context.Context) error {
+func (r *Runtime) Shutdown(ctx context.Context) ShutdownResult {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	result := ShutdownResult{
+		RequestAccepted: true,
+	}
+
 	log.Printf("[runtime] shutting down")
 
+	// Stop workers first
 	if r.workerPool != nil {
 		r.workerPool.Stop()
 	}
 
+	// --- Graceful child process stop ---
+	childPID := 0
 	if r.proc != nil {
-		if err := r.proc.Stop(); err != nil {
-			log.Printf("[runtime] error stopping audiocpp: %v", err)
+		childPID = r.proc.Pid()
+		// Try graceful stop first
+		gracefulOK := r.proc.StopGraceful()
+		if gracefulOK {
+			result.GracefulExited = true
+			result.ForceKillUsed = false
+			log.Printf("[runtime] child process (pid=%d) exited gracefully", childPID)
+		} else {
+			// Graceful failed, force kill
+			log.Printf("[runtime] graceful stop failed, force killing child (pid=%d)", childPID)
+			if err := r.proc.Stop(); err != nil {
+				log.Printf("[runtime] error force-stopping audiocpp: %v", err)
+			}
+			result.GracefulExited = false
+			result.ForceKillUsed = true
 		}
 	}
 
+	// Check if child exited
+	if childPID > 0 {
+		result.ChildExited = !platform.ProcessExists(childPID)
+	} else {
+		result.ChildExited = true // no child to wait for
+	}
+
+	// Cancel lifetime context
 	r.lifetimeCnl()
 
+	// Save model registry
 	if r.modelReg != nil {
 		if err := r.modelReg.Save(); err != nil {
 			log.Printf("[runtime] error saving model registry: %v", err)
 		}
 	}
 
+	// Cleanup outputs
 	if r.outputMgr != nil {
 		if _, err := r.outputMgr.Cleanup(ctx); err != nil {
 			log.Printf("[runtime] error cleaning outputs: %v", err)
 		}
 	}
 
+	// Close database
 	if r.db != nil {
 		if err := r.db.Close(); err != nil {
 			log.Printf("[runtime] error closing database: %v", err)
 		}
 	}
 
+	// Runtime has completed shutdown
+	result.RuntimeExited = true
+
 	log.Printf("[runtime] shutdown complete")
-	return nil
+	return result
 }
 
 func (r *Runtime) Client() *audiocpp.Client {

@@ -230,6 +230,54 @@ func (p *Process) Stop() error {
 	return nil
 }
 
+// StopGraceful sends a graceful stop signal to the child process and waits up to
+// 5 seconds for it to exit on its own. It returns true if the process exited
+// cleanly within the deadline, or false if force termination is required.
+func (p *Process) StopGraceful() bool {
+	p.stopping.Store(true)
+
+	p.genMu.Lock()
+	gen := p.current
+	// Keep current reference for now so supervise doesn't restart
+	p.genMu.Unlock()
+
+	if gen == nil {
+		return true
+	}
+
+	if gen.cmd != nil && gen.cmd.Process != nil {
+		log.Printf("[audiocpp] sending graceful stop to (pid=%d)", gen.pid)
+		if err := platform.StopGraceful(gen.pid); err != nil {
+			log.Printf("[audiocpp] graceful stop error: %v", err)
+		}
+	}
+
+	// Wait up to 5 seconds for the process to exit on its own
+	gracefulDeadline := 5 * time.Second
+	exited := platform.WaitProcessExit(gen.pid, gracefulDeadline)
+	if exited {
+		log.Printf("[audiocpp] process (pid=%d) exited gracefully", gen.pid)
+
+		p.genMu.Lock()
+		if p.current == gen {
+			p.current = nil
+		}
+		p.genMu.Unlock()
+
+		select {
+		case <-gen.stopCh:
+		default:
+			close(gen.stopCh)
+		}
+
+		p.state.Store(int32(StateStopped))
+		return true
+	}
+
+	log.Printf("[audiocpp] process (pid=%d) did not exit gracefully within deadline", gen.pid)
+	return false
+}
+
 func (p *Process) Restart(lifetimeCtx context.Context) error {
 	log.Printf("[audiocpp] restarting server")
 	if err := p.Stop(); err != nil {

@@ -14,3 +14,8 @@ TIME_PENDING | [v] task(dev-go) -> T1~T9 完成，步驟 5 SHA256 驗證補強
 TIME_PENDING | [v] T10 驗證 -> gofmt/go vet/go build/go test/smoke test 通過 ✅ REAL_SMOKE_PASS
 TIME_PENDING | [v] task(REVIEWER) -> 可執行=YES 無錯誤=YES 滿足需求=YES 測試=YES | 完整性24 正確性24 可維護性22 測試25 | 總分95 合格 ✅
 TIME_PENDING | [v] 提交並推送 -> commit 2297d21，HEAD == origin/master ✅
+2026-07-23 08:59 | [v] task(doc-writer) -> 首次強制示範完成，產出 tasks/demo/start.md
+2026-07-23 09:00 | [v] Step 0: 需求記錄到 tasks/requirements.md（追加 Phase 6C）
+2026-07-23 09:00 | [v] Step 1: 場景識別到 tasks/task-status.md
+2026-07-23 09:01 | [v] task(PLANNER) -> 計劃完成，產出 tasks/plan-PHASE6C_EVIDENCE_CLEANUP.md
+2026-07-23 09:02 | [v] task(dev-go) -> 修正 Shutdown 語義 + Smoke Evidence 模型 + 4 個 shutdown 測試完成

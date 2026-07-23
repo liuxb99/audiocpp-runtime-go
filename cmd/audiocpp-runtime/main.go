@@ -52,7 +52,7 @@ func main() {
 
 	rt.StartWorkers(cfg.Jobs.Workers)
 
-	apiServer := api.NewServer(cfg, rt.Client(), rt.Process(), rt.JobManager(), rt.ModelRegistry(), rt.OutputManager())
+	apiServer := api.NewServer(cfg, rt.Client(), rt.Process(), rt.JobManager(), rt.ModelRegistry(), rt.OutputManager(), rt)
 
 	go func() {
 		if err := apiServer.Start(); err != nil && err != http.ErrServerClosed {
@@ -67,14 +67,21 @@ func main() {
 	<-quit
 
 	log.Println("shutting down...")
+
+	// Mark server as shutting down before we begin the shutdown sequence
+	apiServer.SetShuttingDown()
+
+	// Use Runtime.Shutdown() which handles graceful child stop, force kill,
+	// state saving, cleanup, and database closing
+	result := rt.Shutdown(context.Background())
+	log.Printf("[main] shutdown result: request_accepted=%v graceful_exited=%v force_kill=%v runtime_exited=%v child_exited=%v",
+		result.RequestAccepted, result.GracefulExited, result.ForceKillUsed,
+		result.RuntimeExited, result.ChildExited)
+
+	// Then stop the HTTP server
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
-
 	if err := apiServer.Stop(shutdownCtx); err != nil {
 		log.Printf("api server shutdown error: %v", err)
-	}
-
-	if err := rt.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("runtime shutdown error: %v", err)
 	}
 }

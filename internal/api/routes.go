@@ -17,8 +17,20 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// shuttingDownMiddleware returns 503 Service Unavailable when the server is shutting down.
+func (s *Server) shuttingDownMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.shuttingDown.Load() {
+			writeError(w, http.StatusServiceUnavailable, "SHUTTING_DOWN", "server is shutting down")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) registerRoutes() {
 	s.router.Use(corsMiddleware)
+	s.router.Use(s.shuttingDownMiddleware)
 
 	r := s.router.PathPrefix("/v1").Subrouter()
 

@@ -65,20 +65,21 @@ func (s *Server) handleListCapabilities(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, capabilities)
 }
 
-// handleShutdown triggers graceful shutdown of the audiocpp process.
-// It synchronously stops the audiocpp process first, then signals the
-// HTTP server to shut down asynchronously.
+// handleShutdown triggers graceful shutdown of the entire runtime.
+// It synchronously stops workers, the audiocpp child, saves state,
+// cleans up outputs, closes the database, then returns the shutdown result.
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
-	// Stop audiocpp process synchronously
-	if s.process != nil {
-		s.logger.Printf("[api] stopping audiocpp process via shutdown endpoint")
-		if err := s.process.Stop(); err != nil {
-			s.logger.Printf("[api] error stopping audiocpp process: %v", err)
-		}
+	// Mark server as shutting down to reject new requests
+	s.shuttingDown.Store(true)
+	s.logger.Printf("[api] shutdown requested via API")
+
+	if s.runtimeRef == nil {
+		writeError(w, http.StatusInternalServerError, "NO_RUNTIME", "runtime reference not available")
+		return
 	}
 
-	// Respond after audiocpp has been stopped
-	writeJSON(w, http.StatusOK, map[string]string{"status": "shutting_down"})
+	// Execute full shutdown synchronously
+	result := s.runtimeRef.Shutdown(r.Context())
 
 	// Shutdown HTTP server asynchronously (after response is sent)
 	go func() {
@@ -92,6 +93,8 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleAlign(w http.ResponseWriter, r *http.Request) {

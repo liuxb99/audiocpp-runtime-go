@@ -349,28 +349,41 @@ if ($textNonEmpty -and $ExpectedText) {
 
 # ---- 17. Graceful shutdown ----
 $shutdownStart = Get-Date
-$gracefulShutdown = $false
+$shutdownRequestAccepted = $false
+$gracefulExitCompleted = $false
 $forceKillUsed = $false
 
 # Try graceful shutdown via API
 try {
-    $shutdownResp = Invoke-RestMethod -Uri "http://127.0.0.1:$RuntimePort/v1/shutdown" -Method Post -TimeoutSec 5 -ErrorAction Stop
+    $shutdownResp = Invoke-RestMethod -Uri "http://127.0.0.1:$RuntimePort/v1/shutdown" -Method Post -TimeoutSec 10 -ErrorAction Stop
     Write-Log "[17/22] Shutdown API responded"
-    $gracefulShutdown = $true
+    $shutdownRequestAccepted = $true
+    
+    # Parse shutdown result fields (if returned)
+    if ($shutdownResp.data) {
+        if ($shutdownResp.data.graceful_exited -eq $true) { $gracefulExitCompleted = $true }
+        if ($shutdownResp.data.force_kill_used -eq $true) { $forceKillUsed = $true }
+    }
 } catch {
     Write-Log "[17/22] Shutdown API failed: $_"
 }
 
-# Wait up to 5 seconds for graceful exit
+# Wait up to 5 seconds for graceful exit (poll runtime PID)
 if (-not (Wait-PidExit -procId $runtimePID -timeoutSeconds 5)) {
-    Write-Log "[17/22] Runtime still alive after graceful shutdown, using taskkill /T /F"
+    Write-Log "[17/22] Runtime still alive after graceful stop window, using taskkill /T /F"
     taskkill /PID $runtimePID /T /F 2>&1 | Out-Null
     $forceKillUsed = $true
+    $gracefulExitCompleted = $false
+} else {
+    # Runtime PID disappeared on its own — graceful exit completed
+    if (-not $forceKillUsed) {
+        $gracefulExitCompleted = $true
+    }
 }
 
 $shutdownEnd = Get-Date
 $shutdownMs = [math]::Round(($shutdownEnd - $shutdownStart).TotalMilliseconds)
-Write-Log "[17/22] Shutdown completed in ${shutdownMs}ms (graceful=$gracefulShutdown, forceKill=$forceKillUsed)"
+Write-Log "[17/22] Shutdown completed in ${shutdownMs}ms (requestAccepted=$shutdownRequestAccepted, gracefulExit=$gracefulExitCompleted, forceKill=$forceKillUsed)"
 
 # ---- 18. Wait for Runtime PID to exit ----
 $runtimeExited = Wait-PidExit -procId $runtimePID -timeoutSeconds 10
@@ -436,8 +449,10 @@ Write-Log "[proc] Process status saved"
 # ---- Generate result.md ----
 $endTime = Get-Date
 $totalMs = [math]::Round(($endTime - $startTime).TotalMilliseconds)
-$gitCommit = (git rev-parse HEAD 2>$null)
-if (-not $gitCommit) {
+$testedSourceCommit = (git rev-parse HEAD 2>$null)
+$evidenceGeneratedAt = (Get-Date -Format 'o')
+$evidenceCommit = ""
+if (-not $testedSourceCommit) {
     Write-Host "REAL_SMOKE_FAIL: Could not determine git commit"
     exit 1
 }
@@ -465,7 +480,12 @@ foreach ($mf in $requiredModels) {
 }
 $modelShaJson = $modelSha | ConvertTo-Json -Compress
 
-$finalPass = ($httpStatus -eq 200 -and $textNonEmpty -and $matchPassed -and ($childPID -gt 0) -and ($childState -eq "running") -and $runtimeExited -and $childExited -and $runtimePortFree -and $audioCppPortFree)
+# If force kill was used, the test must fail regardless of other results
+if ($forceKillUsed -eq $true) {
+    $finalPass = $false
+} else {
+    $finalPass = ($httpStatus -eq 200 -and $textNonEmpty -and $matchPassed -and ($childPID -gt 0) -and ($childState -eq "running") -and $runtimeExited -and $childExited -and $runtimePortFree -and $audioCppPortFree)
+}
 
 $result = @"
 # Real ASR Smoke Test Result
@@ -474,7 +494,9 @@ $result = @"
 |-------|-------|
 | Execution Time | $(Get-Date $startTime -Format 'yyyy-MM-dd HH:mm:ss') |
 | Total Duration | ${totalMs}ms |
-| Git Commit | $gitCommit |
+| Tested Source Commit | $testedSourceCommit |
+| Evidence Generated At | $evidenceGeneratedAt |
+| Evidence Commit | $(if ($evidenceCommit) { $evidenceCommit } else { "pending" }) |
 | Go Runtime Binary | $runtimePath |
 | audiocpp_server Binary | $serverPath |
 | audio.cpp Upstream SHA | $upstreamSha |
@@ -489,7 +511,8 @@ $result = @"
 | Match Result | $matchResult |
 | Inference Duration | ${inferenceMs}ms |
 | Shutdown Duration | ${shutdownMs}ms |
-| Graceful Shutdown | $gracefulShutdown |
+| Shutdown Request Accepted | $shutdownRequestAccepted |
+| Graceful Exit Completed | $gracefulExitCompleted |
 | Force Kill Used | $forceKillUsed |
 | Runtime Exited Cleanly | $runtimeExited |
 | Child Exited Cleanly | $childExited |

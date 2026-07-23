@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -13,22 +14,25 @@ import (
 	"github.com/liuxb99/audiocpp-runtime-go/internal/jobs"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/models"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/outputs"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/runtime"
 )
 
 type Server struct {
-	config      *config.Config
-	router      *mux.Router
-	audiocppCli *audiocpp.Client
-	process     *audiocpp.Process
-	jobManager  *jobs.Manager
-	modelReg    *models.Registry
-	outputMgr   *outputs.Manager
-	httpServer  *http.Server
-	logger      *log.Logger
-	startTime   time.Time
+	config       *config.Config
+	router       *mux.Router
+	audiocppCli  *audiocpp.Client
+	process      *audiocpp.Process
+	jobManager   *jobs.Manager
+	modelReg     *models.Registry
+	outputMgr    *outputs.Manager
+	runtimeRef   *runtime.Runtime
+	httpServer   *http.Server
+	logger       *log.Logger
+	startTime    time.Time
+	shuttingDown atomic.Bool
 }
 
-func NewServer(cfg *config.Config, ac *audiocpp.Client, proc *audiocpp.Process, jm *jobs.Manager, mr *models.Registry, om *outputs.Manager) *Server {
+func NewServer(cfg *config.Config, ac *audiocpp.Client, proc *audiocpp.Process, jm *jobs.Manager, mr *models.Registry, om *outputs.Manager, rt *runtime.Runtime) *Server {
 	s := &Server{
 		config:      cfg,
 		audiocppCli: ac,
@@ -36,6 +40,7 @@ func NewServer(cfg *config.Config, ac *audiocpp.Client, proc *audiocpp.Process, 
 		jobManager:  jm,
 		modelReg:    mr,
 		outputMgr:   om,
+		runtimeRef:  rt,
 		logger:      log.Default(),
 		startTime:   time.Now(),
 	}
@@ -61,4 +66,10 @@ func (s *Server) Start() error {
 func (s *Server) Stop(ctx context.Context) error {
 	s.logger.Printf("API server shutting down")
 	return s.httpServer.Shutdown(ctx)
+}
+
+// SetShuttingDown marks the server as shutting down, causing the
+// shuttingDownMiddleware to reject new requests with 503.
+func (s *Server) SetShuttingDown() {
+	s.shuttingDown.Store(true)
 }

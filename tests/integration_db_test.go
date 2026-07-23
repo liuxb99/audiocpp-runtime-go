@@ -55,7 +55,7 @@ func newTestHarness(t *testing.T) (*api.Server, *fakeAudioCppServer, *storage.DB
 	workerPool := jobs.NewWorkerPool(jobMgr, ac, 2)
 	workerPool.Start()
 
-	srv := api.NewServer(cfg, ac, jobMgr, modelReg, outputMgr)
+	srv := api.NewServer(cfg, ac, nil, jobMgr, modelReg, outputMgr, nil)
 
 	for _, mi := range []struct{ id, family, task string }{
 		{"tts-model", "pocket_tts", "tts"},
