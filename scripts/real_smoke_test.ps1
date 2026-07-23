@@ -347,11 +347,50 @@ if ($textNonEmpty -and $ExpectedText) {
     }
 }
 
+# ---- 16b. Diagnostics verification ----
+$diagnosticsPassed = $false
+$diagnosticsResponse = $null
+try {
+    $diagUrl = "http://127.0.0.1:$RuntimePort/v1/runtime/diagnostics"
+    $diagResp = Invoke-RestMethod -Uri $diagUrl -Method Get -TimeoutSec 10 -ErrorAction Stop
+    $diagData = if ($diagResp.data) { $diagResp.data } else { $diagResp }
+    
+    # Validate key fields
+    $hasRequired = (
+        (-not [string]::IsNullOrWhiteSpace($diagData.current_state_str)) -and
+        (-not [string]::IsNullOrWhiteSpace($diagData.current_backend)) -and
+        ($diagData.child_pid -gt 0) -and
+        ($diagData.worker_count -ge 0) -and
+        ($diagData.queue_length -ge 0) -and
+        (-not [string]::IsNullOrWhiteSpace($diagData.startup_time)) -and
+        (-not [string]::IsNullOrWhiteSpace($diagData.ready_time))
+    )
+    
+    # Save diagnostics response
+    $diagJson = $diagResp | ConvertTo-Json -Depth 10
+    Write-FileUtf8NoBom -path (Join-Path $ArtifactsDir "runtime_diagnostics.json") -content $diagJson
+    
+    # Verify saved file
+    $diagFilePath = Join-Path $ArtifactsDir "runtime_diagnostics.json"
+    $fileExists = Test-Path $diagFilePath
+    $fileNonEmpty = $fileExists -and ((Get-Item $diagFilePath).Length -gt 0)
+    
+    if ($hasRequired -and $fileExists -and $fileNonEmpty) {
+        $diagnosticsPassed = $true
+        Write-Log "[16b/22] Diagnostics verification PASS - all fields valid"
+    } else {
+        Write-Log "[16b/22] Diagnostics verification FAIL - hasRequired=$hasRequired fileExists=$fileExists fileNonEmpty=$fileNonEmpty"
+    }
+} catch {
+    Write-Log "[16b/22] Diagnostics verification FAIL: $_"
+}
+
 # ---- 17. Graceful shutdown ----
 $shutdownStart = Get-Date
 $shutdownRequestAccepted = $false
 $gracefulExitCompleted = $false
 $forceKillUsed = $false
+$childGracefulExit = $false
 $childForceKilled = $false
 
 # Try graceful shutdown via API
@@ -397,8 +436,10 @@ $childAliveAfter = $false
 if ($childPID -gt 0) {
     $childExited = Wait-PidExit -procId $childPID -timeoutSeconds 5
     if ($childExited) {
-        Write-Log "[19/22] Child PID $childPID exited"
+        $childGracefulExit = $true
+        Write-Log "[19/22] Child PID $childPID exited gracefully"
     } else {
+        $childForceKilled = $true
         Write-Log "[19/22] Child PID $childPID still alive, force killing"
         taskkill /PID $childPID /F 2>&1 | Out-Null
         Start-Sleep 1
@@ -482,7 +523,7 @@ $modelShaJson = $modelSha | ConvertTo-Json -Compress
 if ($forceKillUsed -eq $true) {
     $finalPass = $false
 } else {
-    $finalPass = ($httpStatus -eq 200 -and $textNonEmpty -and $matchPassed -and ($childPID -gt 0) -and ($childState -eq "running") -and $runtimeExited -and $childExited -and $runtimePortFree -and $audioCppPortFree)
+    $finalPass = ($httpStatus -eq 200 -and $textNonEmpty -and $matchPassed -and ($childPID -gt 0) -and ($childState -eq "running") -and $runtimeExited -and $childExited -and $runtimePortFree -and $audioCppPortFree -and $diagnosticsPassed)
 }
 
 $result = @"
@@ -510,11 +551,14 @@ $result = @"
 | Inference Duration | ${inferenceMs}ms |
 | Shutdown Duration | ${shutdownMs}ms |
 | Shutdown Request Accepted | $shutdownRequestAccepted |
-| Graceful Exit Completed | $gracefulExitCompleted |
-| Force Kill Used | $forceKillUsed |
-| Child Force Killed (during shutdown) | $childForceKilled |
+| Runtime Graceful Exit Completed | $gracefulExitCompleted |
+| External Force Kill Used | $forceKillUsed |
+| Child Graceful Exit Completed | $childGracefulExit |
+| Child Force Kill Used | $childForceKilled |
 | Runtime Exited Cleanly | $runtimeExited |
 | Child Exited Cleanly | $childExited |
+| Diagnostics Passed | $diagnosticsPassed |
+| Runtime Diagnostics File | artifacts/smoke/runtime_diagnostics.json |
 | Response Received | $responseReceived |
 | Response Parsed | $responseParsed |
 | Runtime Port Free | $runtimePortFree |
