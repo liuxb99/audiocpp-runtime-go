@@ -401,7 +401,7 @@ func (p *Process) newGeneration(lifetimeCtx context.Context) (*generation, error
 		"--threads", strconv.Itoa(p.threads),
 	}
 
-	genCtx, genCancel := context.WithCancel(lifetimeCtx)
+	genCtx, genCancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(genCtx, p.serverPath, args...)
 	if p.workingDir != "" {
 		cmd.Dir = p.workingDir
