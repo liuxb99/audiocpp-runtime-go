@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liuxb99/audiocpp-runtime-go/internal/audiocpp"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/backend"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/config"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/platform"
 )
@@ -251,7 +251,7 @@ func TestRuntimeStatusContainsChildPID(t *testing.T) {
 	}
 
 	state := rt.AudioCppState()
-	if state != audiocpp.StateRunning {
+	if state != backend.StateRunning {
 		t.Errorf("expected StateRunning, got %v", state)
 	}
 

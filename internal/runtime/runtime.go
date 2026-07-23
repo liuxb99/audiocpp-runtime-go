@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/liuxb99/audiocpp-runtime-go/internal/audiocpp"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/backend"
+	audiocppadapter "github.com/liuxb99/audiocpp-runtime-go/internal/backend/audiocpp"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/config"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/jobs"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/models"
@@ -24,6 +26,8 @@ type Runtime struct {
 	proc    *audiocpp.Process
 	cli     *audiocpp.CLIExecutor
 	client  *audiocpp.Client
+
+	backendMgr *backend.Manager
 
 	db         *storage.DB
 	jobRepo    *storage.JobsRepository
@@ -146,13 +150,22 @@ func (r *Runtime) Init(ctx context.Context) error {
 
 	r.lifetimeCtx, r.lifetimeCnl = context.WithCancel(ctx)
 
+	// 初始化 Backend Manager（使用專屬 Registry，避免跨測試共享 builder）
+	reg := backend.NewRegistry()
+	r.backendMgr = backend.NewManager(reg)
+	builder := audiocppadapter.NewBuilder(r.proc, r.client)
+	reg.MustRegister("audiocpp", builder)
+	if err := r.backendMgr.Select("audiocpp"); err != nil {
+		return fmt.Errorf("select backend: %w", err)
+	}
+
 	log.Printf("[runtime] initialization complete")
 	return nil
 }
 
 func (r *Runtime) StartAudioCpp(ctx context.Context) error {
-	if r.proc == nil {
-		return fmt.Errorf("process not initialized")
+	if r.backendMgr == nil {
+		return fmt.Errorf("backend manager not initialized")
 	}
 
 	if err := r.transition(StateInitializing, StateStarting); err != nil {
@@ -160,20 +173,22 @@ func (r *Runtime) StartAudioCpp(ctx context.Context) error {
 	}
 
 	log.Printf("[runtime] starting audiocpp server")
-	if err := r.proc.Start(r.lifetimeCtx); err != nil {
-		return fmt.Errorf("start audiocpp server: %w", err)
+
+	cfg := backend.StartConfig{
+		Device:   r.cfg.AudioCpp.Device,
+		Threads:  r.cfg.AudioCpp.Threads,
+		LazyLoad: r.cfg.AudioCpp.LazyLoad,
 	}
-	r.childStartTime = time.Now()
 
 	readyCtx, cancel := context.WithTimeout(r.lifetimeCtx,
 		time.Duration(r.cfg.AudioCpp.StartupTimeoutSec)*time.Second)
 	defer cancel()
 
-	if err := r.proc.WaitForReady(readyCtx,
-		time.Duration(r.cfg.AudioCpp.StartupTimeoutSec)*time.Second); err != nil {
-		return fmt.Errorf("audiocpp server not ready: %w", err)
+	if err := r.backendMgr.StartAndWait(readyCtx, cfg, r.cfg.AudioCpp.StartupTimeoutSec); err != nil {
+		return fmt.Errorf("start backend: %w", err)
 	}
 
+	r.childStartTime = time.Now()
 	r.readyTime = time.Now()
 	log.Printf("[runtime] audiocpp server is ready")
 
@@ -263,16 +278,11 @@ func (r *Runtime) Shutdown(ctx context.Context) ShutdownResult {
 	// Step 4: StopChild
 	childPID := 0
 	schedule.ExecuteStep(StepStopChild, func() error {
-		if r.proc == nil {
+		if r.backendMgr == nil {
 			return nil
 		}
-		childPID = r.proc.Pid()
-		gracefulOK := r.proc.StopGraceful()
-		if !gracefulOK {
-			log.Printf("[runtime] graceful stop failed, force killing child (pid=%d)", childPID)
-			return r.proc.Stop()
-		}
-		return nil
+		childPID = r.backendMgr.PID()
+		return r.backendMgr.Stop()
 	}, 10*time.Second)
 
 	if childPID > 0 {
@@ -383,27 +393,31 @@ func (r *Runtime) StartTime() time.Time {
 }
 
 func (r *Runtime) AudioCppPID() int {
-	if r.proc == nil {
+	if r.backendMgr == nil {
 		return 0
 	}
-	return r.proc.Pid()
+	return r.backendMgr.PID()
 }
 
-func (r *Runtime) AudioCppState() audiocpp.ProcessState {
-	if r.proc == nil {
-		return audiocpp.StateStopped
+func (r *Runtime) AudioCppState() backend.State {
+	if r.backendMgr == nil {
+		return backend.StateStopped
 	}
-	return r.proc.State()
+	return r.backendMgr.State()
 }
 
 func (r *Runtime) IsAudioCppAlive() bool {
-	if r.client == nil {
+	if r.backendMgr == nil {
 		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err := r.client.Health(ctx)
+	_, err := r.backendMgr.Health(ctx)
 	return err == nil
+}
+
+func (r *Runtime) BackendManager() *backend.Manager {
+	return r.backendMgr
 }
 
 func (r *Runtime) ReadyTime() time.Time {

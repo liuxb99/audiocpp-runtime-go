@@ -29,14 +29,20 @@ func (r *Runtime) Diagnostics() Diagnostics {
 	stateStr := StateString(state)
 
 	pid := 0
-	if r.proc != nil {
-		pid = r.proc.Pid()
+	backendName := ""
+	if r.backendMgr != nil {
+		pid = r.backendMgr.PID()
+		if pid < 0 {
+			pid = 0
+		}
+		backendName = r.backendMgr.Name()
 	}
 
-	backend := ""
 	model := ""
 	if r.cfg != nil {
-		backend = r.cfg.AudioCpp.Backend
+		if backendName == "" {
+			backendName = r.cfg.AudioCpp.Backend
+		}
 		if len(r.cfg.AudioCpp.Models) > 0 {
 			model = r.cfg.AudioCpp.Models[0].ID
 		}
@@ -63,7 +69,7 @@ func (r *Runtime) Diagnostics() Diagnostics {
 		QueueLength:     queueLen,
 		CurrentState:    state,
 		CurrentStateStr: stateStr,
-		CurrentBackend:  backend,
+		CurrentBackend:  backendName,
 		CurrentModel:    model,
 		ChildPID:        pid,
 		MemoryUsage:     int64(memStats.Alloc),

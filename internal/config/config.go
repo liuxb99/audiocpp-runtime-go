@@ -63,6 +63,10 @@ type OutputsConfig struct {
 	RetainDays int    `yaml:"retain_days"`
 }
 
+type BackendConfig struct {
+	Type string `yaml:"type"`
+}
+
 type JobsConfig struct {
 	Workers   int `yaml:"workers"`
 	QueueSize int `yaml:"queue_size"`
@@ -70,6 +74,7 @@ type JobsConfig struct {
 
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
+	Backend  BackendConfig  `yaml:"backend"`
 	AudioCpp AudioCppConfig `yaml:"audiocpp"`
 	Storage  StorageConfig  `yaml:"storage"`
 	Models   ModelsConfig   `yaml:"models"`
@@ -82,6 +87,9 @@ func DefaultConfig() *Config {
 		Server: ServerConfig{
 			Host: "127.0.0.1",
 			Port: 8091,
+		},
+		Backend: BackendConfig{
+			Type: "audiocpp",
 		},
 		AudioCpp: AudioCppConfig{
 			ServerPath:         "runtime/audio.cpp/bin/audiocpp_server.exe",
@@ -175,10 +183,25 @@ func (c *Config) Validate(baseDir string) error {
 		}
 	}
 
+	if c.Backend.Type != "" {
+		bt := strings.TrimSpace(c.Backend.Type)
+		if bt == "" {
+			errs = append(errs, "backend.type must not be only whitespace")
+		}
+	}
+
 	if len(errs) > 0 {
 		return &ValidationError{Errors: errs}
 	}
 	return nil
+}
+
+// BackendType 傳回後端類型，若未設定則回傳預設值 "audiocpp"
+func (c *Config) BackendType() string {
+	if c.Backend.Type == "" {
+		return "audiocpp"
+	}
+	return c.Backend.Type
 }
 
 func (c *Config) ResolvePaths(baseDir string) {
