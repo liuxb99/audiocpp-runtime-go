@@ -6,7 +6,7 @@
 | Total Duration | 11594ms |
 | Tested Source Commit | a7fcde7a566ab996c6cf5b920fd339e24be6ffdc |
 | Evidence Generated At | 2026-07-24T00:32:18.4794355+08:00 |
-| Evidence Commit | pending |
+| Evidence Commit | 08e2144bf77b803e396a875537f317dc5154ab69 |
 | Go Runtime Binary | D:\AI-Tools\audio-cpp-runtime-go\bin\audiocpp-runtime.exe |
 | audiocpp_server Binary | D:\AI-Tools\audio-cpp-runtime-go\audio.cpp\build\windows-cpu-release\bin\audiocpp_server.exe |
 | audio.cpp Upstream SHA | cd91110b39ad48cdb594d893687e9d2ae8ce0dbf |
@@ -24,10 +24,10 @@
 | Shutdown Request Accepted | True |
 | Runtime Graceful Exit Completed | True |
 | External Force Kill Used | False |
-| Child Graceful Exit Completed | True |
-| Child Force Kill Used | False |
+| Child Graceful Exit Completed | False |
+| Child Force Kill Used | True |
 | Runtime Exited Cleanly | True |
-| Child Exited Cleanly | True |
+| Child Exited Cleanly | True (via runtime internal force kill) |
 | Diagnostics Passed | True |
 | Runtime Diagnostics File | artifacts/smoke/runtime_diagnostics.json |
 | Response Received | True |

@@ -32,11 +32,11 @@
 |------|------|
 | **名稱** | audio.cpp Child Process Graceful Shutdown 未實作 |
 | **原因** | audio.cpp server 子程序未實作 SIGTERM (Windows 上為 `CTRL_BREAK_EVENT`) 處理器，導致 Go Runtime 呼叫 `StopGraceful()`（透過 `platform.StopGraceful()` 執行 `taskkill /PID` 不帶 `/F`）時，子程序不會自行退出。Runtime 在等待 5 秒後仍需回退到 `taskkill /T /F` 強制終止。在 Unix 平台上，`StopGraceful()` 發送 `SIGTERM` 同樣因 audio.cpp 缺少 signal handler 而無效。 |
-| **目前影響** | Real smoke test 中 shutdown 階段無法達成完全優雅關閉（`GracefulExited=false, ForceKillUsed=true`），影響 smoke 驗收的品質指標；強制終止可能導致音訊檔案寫入不完整或資料庫狀態不一致。 |
+| **目前影響** | Real smoke test 中 shutdown 階段無法達成完全優雅關閉（`GracefulExited=false, ForceKillUsed=true`），影響 smoke 驗收的品質指標；強制終止可能導致音訊檔案寫入不完整或資料庫狀態不一致。**Phase 7B 真實 Smoke 實測**（Source Commit a7fcde7）：Graceful stop command 返回 exit status 1；Child 超過 5 秒 graceful deadline 未退出；Runtime 內部執行 force kill 終止 child；Runtime 自身優雅退出（External Force Kill=False）；Child Process Exited=True（via internal force kill）。此為 audio.cpp 上游程式碼的已知限制，非 Go Runtime 本身可解決。 |
 | **是否阻塞** | 否 — 關閉功能可正常運作，但無法保證完全優雅。 |
 | **優先級** | P1 — 重要（影響 smoke 驗收品質與資料一致性） |
 | **預估工作量** | 3 人/天（需修改 audio.cpp server 新增 signal handler + 跨平台測試） |
-| **建議 Phase** | Phase 7 — 與 Backend Contract 標準化合併處理 |
+| **建議 Phase** | Phase 7C 或 Phase 8 — 需 audio.cpp 上游支援 signal handler |
 
 ---
 
