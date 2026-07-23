@@ -4,14 +4,13 @@ import (
 	"testing"
 
 	"github.com/liuxb99/audiocpp-runtime-go/internal/backend"
-	"github.com/liuxb99/audiocpp-runtime-go/internal/jobs"
 )
 
 func TestMapper_ASR_JobMapping(t *testing.T) {
 	m := NewDefaultMapper()
-	job := &jobs.Job{
-		ID:      "asr-1",
-		Type:    jobs.TypeASR,
+	req := &ExecutionRequest{
+		JobID:   "asr-1",
+		Type:    "asr",
 		ModelID: "whisper-1",
 		Request: map[string]interface{}{
 			"audio_path": "/audio/test.wav",
@@ -19,56 +18,56 @@ func TestMapper_ASR_JobMapping(t *testing.T) {
 		},
 	}
 
-	req, err := m.ToInferenceRequest(job)
+	ir, err := m.ToInferenceRequest(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if req.TaskType != "asr" {
-		t.Errorf("expected TaskType 'asr', got %q", req.TaskType)
+	if ir.TaskType != "asr" {
+		t.Errorf("expected TaskType 'asr', got %q", ir.TaskType)
 	}
-	if req.Model != "whisper-1" {
-		t.Errorf("expected Model 'whisper-1', got %q", req.Model)
+	if ir.Model != "whisper-1" {
+		t.Errorf("expected Model 'whisper-1', got %q", ir.Model)
 	}
-	if req.AudioPath != "/audio/test.wav" {
-		t.Errorf("expected AudioPath '/audio/test.wav', got %q", req.AudioPath)
+	if ir.AudioPath != "/audio/test.wav" {
+		t.Errorf("expected AudioPath '/audio/test.wav', got %q", ir.AudioPath)
 	}
-	if req.Options["language"] != "en" {
-		t.Errorf("expected Options.language 'en', got %v", req.Options["language"])
+	if ir.Options["language"] != "en" {
+		t.Errorf("expected Options.language 'en', got %v", ir.Options["language"])
 	}
 	// audio_path should not be in Options
-	if _, ok := req.Options["audio_path"]; ok {
+	if _, ok := ir.Options["audio_path"]; ok {
 		t.Error("audio_path should not be in Options")
 	}
 }
 
 func TestMapper_ASR_NoAudioPath(t *testing.T) {
 	m := NewDefaultMapper()
-	job := &jobs.Job{
-		ID:      "asr-2",
-		Type:    jobs.TypeASR,
+	req := &ExecutionRequest{
+		JobID:   "asr-2",
+		Type:    "asr",
 		ModelID: "whisper-1",
 		Request: map[string]interface{}{},
 	}
 
-	req, err := m.ToInferenceRequest(job)
+	ir, err := m.ToInferenceRequest(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if req.TaskType != "asr" {
-		t.Errorf("expected TaskType 'asr', got %q", req.TaskType)
+	if ir.TaskType != "asr" {
+		t.Errorf("expected TaskType 'asr', got %q", ir.TaskType)
 	}
-	if req.AudioPath != "" {
-		t.Errorf("expected empty AudioPath, got %q", req.AudioPath)
+	if ir.AudioPath != "" {
+		t.Errorf("expected empty AudioPath, got %q", ir.AudioPath)
 	}
 }
 
 func TestMapper_TTS_JobMapping(t *testing.T) {
 	m := NewDefaultMapper()
-	job := &jobs.Job{
-		ID:      "tts-1",
-		Type:    jobs.TypeTTS,
+	req := &ExecutionRequest{
+		JobID:   "tts-1",
+		Type:    "tts",
 		ModelID: "tts-model-1",
 		Request: map[string]interface{}{
 			"input": "Hello world",
@@ -76,54 +75,54 @@ func TestMapper_TTS_JobMapping(t *testing.T) {
 		},
 	}
 
-	req, err := m.ToInferenceRequest(job)
+	ir, err := m.ToInferenceRequest(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if req.TaskType != "tts" {
-		t.Errorf("expected TaskType 'tts', got %q", req.TaskType)
+	if ir.TaskType != "tts" {
+		t.Errorf("expected TaskType 'tts', got %q", ir.TaskType)
 	}
-	if req.Model != "tts-model-1" {
-		t.Errorf("expected Model 'tts-model-1', got %q", req.Model)
+	if ir.Model != "tts-model-1" {
+		t.Errorf("expected Model 'tts-model-1', got %q", ir.Model)
 	}
-	if req.Options["input"] != "Hello world" {
-		t.Errorf("expected Options.input 'Hello world', got %v", req.Options["input"])
+	if ir.Options["input"] != "Hello world" {
+		t.Errorf("expected Options.input 'Hello world', got %v", ir.Options["input"])
 	}
-	if req.Options["voice"] != "alba" {
-		t.Errorf("expected Options.voice 'alba', got %v", req.Options["voice"])
+	if ir.Options["voice"] != "alba" {
+		t.Errorf("expected Options.voice 'alba', got %v", ir.Options["voice"])
 	}
 }
 
 func TestMapper_TTS_WithTextField(t *testing.T) {
 	m := NewDefaultMapper()
-	job := &jobs.Job{
-		ID:      "tts-2",
-		Type:    jobs.TypeTTS,
+	req := &ExecutionRequest{
+		JobID:   "tts-2",
+		Type:    "tts",
 		ModelID: "tts-model-1",
 		Request: map[string]interface{}{
 			"text": "Hello via text field",
 		},
 	}
 
-	req, err := m.ToInferenceRequest(job)
+	ir, err := m.ToInferenceRequest(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if req.TaskType != "tts" {
-		t.Errorf("expected TaskType 'tts', got %q", req.TaskType)
+	if ir.TaskType != "tts" {
+		t.Errorf("expected TaskType 'tts', got %q", ir.TaskType)
 	}
-	if req.Options["text"] != "Hello via text field" {
-		t.Errorf("expected Options.text 'Hello via text field', got %v", req.Options["text"])
+	if ir.Options["text"] != "Hello via text field" {
+		t.Errorf("expected Options.text 'Hello via text field', got %v", ir.Options["text"])
 	}
 }
 
 func TestMapper_GenericTask_Mapping(t *testing.T) {
 	m := NewDefaultMapper()
-	job := &jobs.Job{
-		ID:      "task-1",
-		Type:    jobs.TypeVoiceClone,
+	req := &ExecutionRequest{
+		JobID:   "task-1",
+		Type:    "voice_clone",
 		ModelID: "vc-model",
 		Request: map[string]interface{}{
 			"source_audio": "/audio/source.wav",
@@ -131,34 +130,34 @@ func TestMapper_GenericTask_Mapping(t *testing.T) {
 		},
 	}
 
-	req, err := m.ToInferenceRequest(job)
+	ir, err := m.ToInferenceRequest(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if req.TaskType != "task" {
-		t.Errorf("expected TaskType 'task', got %q", req.TaskType)
+	if ir.TaskType != "task" {
+		t.Errorf("expected TaskType 'task', got %q", ir.TaskType)
 	}
-	if req.Options["source_audio"] != "/audio/source.wav" {
-		t.Errorf("expected Options.source_audio, got %v", req.Options["source_audio"])
+	if ir.Options["source_audio"] != "/audio/source.wav" {
+		t.Errorf("expected Options.source_audio, got %v", ir.Options["source_audio"])
 	}
-	if req.Options["target_text"] != "test" {
-		t.Errorf("expected Options.target_text, got %v", req.Options["target_text"])
+	if ir.Options["target_text"] != "test" {
+		t.Errorf("expected Options.target_text, got %v", ir.Options["target_text"])
 	}
 }
 
 func TestMapper_TTS_MissingInput(t *testing.T) {
 	m := NewDefaultMapper()
-	job := &jobs.Job{
-		ID:      "tts-bad",
-		Type:    jobs.TypeTTS,
+	req := &ExecutionRequest{
+		JobID:   "tts-bad",
+		Type:    "tts",
 		ModelID: "tts-model",
 		Request: map[string]interface{}{
 			"voice": "alba",
 		},
 	}
 
-	_, err := m.ToInferenceRequest(job)
+	_, err := m.ToInferenceRequest(req)
 	if err == nil {
 		t.Fatal("expected error for missing input/text field")
 	}
@@ -238,45 +237,45 @@ func TestMapper_TaskTypeToCapability(t *testing.T) {
 	m := NewDefaultMapper()
 
 	tests := []struct {
-		jobType     jobs.Type
+		taskType    string
 		expectedCap backend.Capability
 		expectError bool
 	}{
-		{jobs.TypeASR, backend.CapASR, false},
-		{jobs.TypeTTS, backend.CapTTS, false},
-		{jobs.TypeVoiceClone, backend.CapVoiceClone, false},
-		{jobs.TypeVoiceConversion, backend.CapVoiceConversion, false},
-		{jobs.TypeSourceSep, backend.CapSourceSeparation, false},
-		{jobs.TypeMusicGen, backend.CapMusicGeneration, false},
-		{jobs.TypeVAD, backend.CapVAD, false},
-		{jobs.TypeDiarization, backend.CapDiarization, false},
-		{jobs.TypeAlignment, backend.CapAlignment, false},
-		{jobs.TypeVoiceDesign, backend.CapVoiceDesign, false},
-		{jobs.Type("unknown"), "", true},
+		{"asr", backend.CapASR, false},
+		{"tts", backend.CapTTS, false},
+		{"voice_clone", backend.CapVoiceClone, false},
+		{"voice_conversion", backend.CapVoiceConversion, false},
+		{"source_separation", backend.CapSourceSeparation, false},
+		{"music_generation", backend.CapMusicGeneration, false},
+		{"vad", backend.CapVAD, false},
+		{"diarization", backend.CapDiarization, false},
+		{"alignment", backend.CapAlignment, false},
+		{"voice_design", backend.CapVoiceDesign, false},
+		{"unknown", "", true},
 	}
 
 	for _, tt := range tests {
-		cap, err := m.TaskTypeToCapability(tt.jobType)
+		cap, err := m.TaskTypeToCapability(tt.taskType)
 		if tt.expectError {
 			if err == nil {
-				t.Errorf("expected error for type %q", tt.jobType)
+				t.Errorf("expected error for type %q", tt.taskType)
 			}
 			continue
 		}
 		if err != nil {
-			t.Errorf("unexpected error for type %q: %v", tt.jobType, err)
+			t.Errorf("unexpected error for type %q: %v", tt.taskType, err)
 			continue
 		}
 		if cap != tt.expectedCap {
-			t.Errorf("expected capability %q for type %q, got %q", tt.expectedCap, tt.jobType, cap)
+			t.Errorf("expected capability %q for type %q, got %q", tt.expectedCap, tt.taskType, cap)
 		}
 	}
 }
 
-func TestMapper_ToInferenceRequest_NilJob(t *testing.T) {
+func TestMapper_ToInferenceRequest_Nil(t *testing.T) {
 	m := NewDefaultMapper()
 	_, err := m.ToInferenceRequest(nil)
 	if err == nil {
-		t.Fatal("expected error for nil job")
+		t.Fatal("expected error for nil request")
 	}
 }

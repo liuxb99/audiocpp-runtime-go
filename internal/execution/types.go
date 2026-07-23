@@ -1,9 +1,5 @@
 package execution
 
-import (
-	"github.com/liuxb99/audiocpp-runtime-go/internal/jobs"
-)
-
 // ExecutionRequest 包裝 Job 資訊，用於 Mapper 轉換為後端請求。
 //
 // Mapper 實作應從 Request 中提取 typed 欄位並驗證必填欄位是否存在。
@@ -12,7 +8,7 @@ type ExecutionRequest struct {
 	JobID string
 
 	// Type 為任務類型（如 tts、asr、voice_clone 等）。
-	Type jobs.Type
+	Type string
 
 	// ModelID 為指定的模型名稱。
 	ModelID string

@@ -21,7 +21,14 @@ func (s *Server) handleListVoices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	voices, err := s.audiocppCli.ListVoices(r.Context(), modelID)
+	// Use BackendManager instead of direct audiocppCli
+	bm := s.runtimeRef.BackendManager()
+	if bm == nil {
+		writeError(w, http.StatusInternalServerError, "NO_BACKEND", "backend not available")
+		return
+	}
+
+	voices, err := bm.ListVoices(r.Context(), modelID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "AUDIOCPP_ERROR", err.Error())
 		return

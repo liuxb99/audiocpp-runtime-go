@@ -1,21 +1,27 @@
 package jobs
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"sync"
 	"time"
 
 	"github.com/liuxb99/audiocpp-runtime-go/internal/storage"
 )
 
 type Manager struct {
-	repo  *storage.JobsRepository
-	queue *Queue
+	repo        *storage.JobsRepository
+	queue       *Queue
+	cancelMu    sync.Mutex
+	cancelFuncs map[string]context.CancelFunc
 }
 
 func NewManager(repo *storage.JobsRepository, queueCapacity int) *Manager {
 	return &Manager{
-		repo:  repo,
-		queue: NewQueueWithCapacity(queueCapacity),
+		repo:        repo,
+		queue:       NewQueueWithCapacity(queueCapacity),
+		cancelFuncs: make(map[string]context.CancelFunc),
 	}
 }
 
@@ -140,7 +146,12 @@ func (m *Manager) CancelJob(job *Job) error {
 		if err := job.TransitionTo(StatusCancelRequested); err != nil {
 			return err
 		}
-		return m.repo.Update(job.ToRecord())
+		if err := m.repo.Update(job.ToRecord()); err != nil {
+			return err
+		}
+		// Trigger context cancellation so the worker stops immediately
+		m.CancelRunningFunc(job.ID)
+		return nil
 
 	case StatusRetryWaiting:
 		// Cancel a retry-waiting job directly to Canceled
@@ -259,4 +270,44 @@ func (m *Manager) ListJobsByStatus(status string) ([]*Job, error) {
 		jobs[i] = JobFromRecord(r)
 	}
 	return jobs, nil
+}
+
+// RegisterCancelFunc stores a cancel function for a running job.
+// The worker calls this when it begins processing a job.
+func (m *Manager) RegisterCancelFunc(jobID string, cancel context.CancelFunc) {
+	m.cancelMu.Lock()
+	defer m.cancelMu.Unlock()
+	m.cancelFuncs[jobID] = cancel
+}
+
+// UnregisterCancelFunc removes a cancel function for a job that has finished processing.
+func (m *Manager) UnregisterCancelFunc(jobID string) {
+	m.cancelMu.Lock()
+	defer m.cancelMu.Unlock()
+	delete(m.cancelFuncs, jobID)
+}
+
+// CancelRunningFunc looks up and calls the cancel function for a running job.
+// Returns true if a cancel function was found and called.
+func (m *Manager) CancelRunningFunc(jobID string) bool {
+	m.cancelMu.Lock()
+	defer m.cancelMu.Unlock()
+	if cancel, ok := m.cancelFuncs[jobID]; ok {
+		cancel()
+		log.Printf("[jobs] cancelled running job %s via context", jobID)
+		return true
+	}
+	return false
+}
+
+// CancelAllRunningFuncs cancels all currently registered running jobs.
+// Used by WorkerPool.Stop(ShutdownCancel).
+func (m *Manager) CancelAllRunningFuncs() {
+	m.cancelMu.Lock()
+	defer m.cancelMu.Unlock()
+	for jobID, cancel := range m.cancelFuncs {
+		cancel()
+		log.Printf("[jobs] cancelled running job %s via context (shutdown)", jobID)
+	}
+	m.cancelFuncs = make(map[string]context.CancelFunc)
 }

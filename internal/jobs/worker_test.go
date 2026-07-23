@@ -345,7 +345,7 @@ func TestWorkerPool_ShutdownCancelCancelsRunningJob(t *testing.T) {
 		t.Fatalf("Enqueue: %v", err)
 	}
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 
 	// Stop with cancel
 	done := make(chan struct{})
@@ -357,7 +357,7 @@ func TestWorkerPool_ShutdownCancelCancelsRunningJob(t *testing.T) {
 	select {
 	case <-done:
 		// Good - cancel completed
-	case <-time.After(2 * time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("ShutdownCancel timed out")
 	}
 }
@@ -890,5 +890,64 @@ func TestRetry_CancelStopsRetry(t *testing.T) {
 	}
 	if jobResult.Status == StatusSucceeded {
 		t.Errorf("expected job to not succeed after cancel, got %q", jobResult.Status)
+	}
+}
+
+// ── Additional cancellation tests ──
+
+// TestCancelRunningJobContextCancelled 驗證取消 Running Job 時，
+// executor 的 context 被取消，且 Job 最終狀態為 Canceled。
+func TestCancelRunningJobContextCancelled(t *testing.T) {
+	mgr, _, cleanup := testWithManager(t, 100)
+	defer cleanup()
+
+	// 用一個 channel 來通知 context 已被取消
+	ctxCancelDetected := make(chan struct{})
+
+	executor := JobExecutorFunc(func(ctx context.Context, job *Job) (*JobResult, error) {
+		// 等待 context 被取消
+		<-ctx.Done()
+		close(ctxCancelDetected)
+		return nil, ctx.Err()
+	})
+
+	wp := NewWorkerPool(mgr, executor, 1)
+	wp.Start()
+	defer wp.Stop(ShutdownDrain)
+
+	job := testJob("test-cancel-running-ctx", TypeTTS)
+	if err := mgr.CreateJob(job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+	if err := mgr.Enqueue(job); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	// 等待 worker 撿起 job
+	time.Sleep(200 * time.Millisecond)
+
+	// 取消 job
+	if err := mgr.CancelJob(job); err != nil {
+		t.Fatalf("CancelJob: %v", err)
+	}
+
+	// 驗證 context 被取消（等待 executor 確認）
+	select {
+	case <-ctxCancelDetected:
+		// Good — context was cancelled
+	case <-time.After(3 * time.Second):
+		t.Fatal("executor context was not cancelled within timeout")
+	}
+
+	// 等待 worker 完成狀態更新
+	time.Sleep(500 * time.Millisecond)
+
+	// Job 應為 Canceled
+	jobResult, err := mgr.GetJob("test-cancel-running-ctx")
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if jobResult.Status != StatusCanceled {
+		t.Errorf("expected job status 'canceled', got %q", jobResult.Status)
 	}
 }

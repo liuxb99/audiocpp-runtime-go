@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -55,7 +56,11 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.jobManager.Enqueue(job); err != nil {
-		writeError(w, http.StatusInternalServerError, "JOB_ENQUEUE_ERROR", err.Error())
+		if errors.Is(err, jobs.ErrQueueFull) {
+			writeError(w, http.StatusTooManyRequests, "QUEUE_FULL", "Job queue is full, please try again later")
+		} else {
+			writeError(w, http.StatusInternalServerError, "JOB_ENQUEUE_ERROR", err.Error())
+		}
 		return
 	}
 

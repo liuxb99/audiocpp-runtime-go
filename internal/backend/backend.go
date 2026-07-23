@@ -2,6 +2,11 @@ package backend
 
 import "context"
 
+// VoiceListResult 為 ListVoices 的回應結果。
+type VoiceListResult struct {
+	Voices []string `json:"voices"`
+}
+
 // Backend 後端抽象介面
 //
 // Backend 定義了後端引擎的生命週期管理、健康檢查、能力查詢與推理請求等操作。
@@ -63,4 +68,9 @@ type Backend interface {
 	//
 	// 包含狀態、PID、是否存活、運行時間等。
 	Diagnostics() Diagnostics
+
+	// ListVoices 查詢指定模型支援的語音清單。
+	//
+	// modelID 為模型名稱；回傳語音名稱清單。
+	ListVoices(ctx context.Context, modelID string) (*VoiceListResult, error)
 }

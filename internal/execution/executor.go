@@ -3,8 +3,6 @@ package execution
 import (
 	"context"
 	"time"
-
-	"github.com/liuxb99/audiocpp-runtime-go/internal/jobs"
 )
 
 // Executor 為統一的 Job 執行介面。
@@ -13,11 +11,11 @@ import (
 // 實作此介面的型別應處理完整的執行生命週期：能力檢查、請求轉換、
 // 後端提交、結果轉換、重試邏輯等。
 type Executor interface {
-	// Execute 執行一個 Job 並回傳執行結果。
+	// Execute 執行一個請求並回傳執行結果。
 	//
-	// ctx 用於控制逾時與取消；job 包含任務參數與狀態。
+	// ctx 用於控制逾時與取消；req 包含任務參數。
 	// 成功時回傳 Result（ErrorCode 為空字串）；失敗時回傳 error。
-	Execute(ctx context.Context, job *jobs.Job) (*Result, error)
+	Execute(ctx context.Context, req *ExecutionRequest) (*Result, error)
 }
 
 // Result 為單次 Job 執行的結構化結果。

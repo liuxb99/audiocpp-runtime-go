@@ -54,7 +54,7 @@ func newDefaultExecutor(bMgr *backend.Manager) jobs.JobExecutor {
 	mapper := execution.NewDefaultMapper()
 	gate := execution.NewDefaultGate(bMgr)
 	executor := execution.NewDefaultExecutor(bMgr, mapper, gate)
-	return execution.NewJobExecutorAdapter(executor)
+	return jobs.NewJobExecutorAdapter(executor)
 }
 
 func createAndEnqueueJob(t *testing.T, mgr *jobs.Manager, id string, typ jobs.Type, req map[string]interface{}) *jobs.Job {

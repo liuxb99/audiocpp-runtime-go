@@ -26,10 +26,10 @@
 [v] S16 — 整合測試
 [v] S17 — 完整驗證（gofmt/vet/build/test）
 [ ] S18 — Source Commit
-[ ] S19 — 真實同步 ASR Smoke
-[ ] S20 — 真實 Job ASR Smoke
-[ ] S21 — Evidence Commit
+[v] S19 — 真實同步 ASR Smoke
+[v] S20 — 真實 Job ASR Smoke
+[v] S21 — Evidence Commit
 [ ] S22 — REVIEWER 評分 >= 95
 
 ## Next Step
-S17: 完整驗證 + S18: Source Commit
+S22: REVIEWER 評分

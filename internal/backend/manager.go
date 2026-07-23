@@ -159,3 +159,14 @@ func (m *Manager) Diagnostics() Diagnostics {
 	}
 	return be.Diagnostics()
 }
+
+// ListVoices 查詢指定模型支援的語音清單。
+func (m *Manager) ListVoices(ctx context.Context, modelID string) (*VoiceListResult, error) {
+	m.mu.RLock()
+	be := m.active
+	m.mu.RUnlock()
+	if be == nil {
+		return nil, ErrNoActiveBackend
+	}
+	return be.ListVoices(ctx, modelID)
+}

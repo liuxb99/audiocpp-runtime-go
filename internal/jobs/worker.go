@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/liuxb99/audiocpp-runtime-go/internal/execution"
 )
 
 // JobExecutor 定義執行 Job 的介面，用於解耦 WorkerPool 與具體後端實作。
@@ -61,90 +62,13 @@ const (
 	ShutdownCancel
 )
 
-// RetryDecision determines whether a failed job should be retried.
-type RetryDecision struct {
-	ShouldRetry bool
-	Delay       time.Duration
-}
-
-// IsRetryableError checks if an error is a transient/retryable error.
-func IsRetryableError(err error) bool {
-	if err == nil {
-		return false
+// RetryPolicy returns an execution.RetryPolicy configured from the worker pool settings.
+func (wp *WorkerPool) RetryPolicy() *execution.RetryPolicy {
+	return &execution.RetryPolicy{
+		MaxAttempts:  wp.maxAttempts,
+		InitialDelay: wp.retryInitDelay,
+		MaxDelay:     wp.retryMaxDelay,
 	}
-
-	errMsg := err.Error()
-	retryablePatterns := []string{
-		"temporary backend unavailable",
-		"backend unavailable",
-		"502",
-		"503",
-		"504",
-		"connection reset",
-		"connection refused",
-		"temporary",
-		"timeout",
-		"i/o timeout",
-		"no such host",
-		"dial tcp",
-	}
-
-	for _, p := range retryablePatterns {
-		if contains(errMsg, p) {
-			return true
-		}
-	}
-
-	// Also treat "no active backend" and "backend not ready" as retryable
-	if contains(errMsg, "no active backend") || contains(errMsg, "backend not ready") {
-		return true
-	}
-
-	return false
-}
-
-func contains(s, substr string) bool {
-	if len(s) < len(substr) {
-		return false
-	}
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
-// IsNonRetryableError returns true for errors that should NOT be retried.
-func IsNonRetryableError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	errMsg := err.Error()
-	nonRetryablePatterns := []string{
-		"unsupported capability",
-		"invalid input",
-		"model not found",
-		"context canceled",
-		"user canceled",
-		"invalid request",
-		"unsupported",
-		"not found",
-	}
-
-	for _, p := range nonRetryablePatterns {
-		if contains(errMsg, p) {
-			return true
-		}
-	}
-
-	// Also treat "capability not supported" as non-retryable
-	if contains(errMsg, "capability not supported") {
-		return true
-	}
-
-	return false
 }
 
 type WorkerPool struct {
@@ -161,6 +85,9 @@ type WorkerPool struct {
 	maxAttempts    int
 	retryInitDelay time.Duration
 	retryMaxDelay  time.Duration
+
+	// retryPolicy 為計算重試延遲的策略。
+	retryPolicy *execution.RetryPolicy
 
 	// Worker ID counter for ownership
 	workerIDCounter int64
@@ -181,6 +108,11 @@ func NewWorkerPool(manager *Manager, executor JobExecutor, workers int) *WorkerP
 		maxAttempts:    3,
 		retryInitDelay: 500 * time.Millisecond,
 		retryMaxDelay:  5 * time.Second,
+		retryPolicy: &execution.RetryPolicy{
+			MaxAttempts:  3,
+			InitialDelay: 500 * time.Millisecond,
+			MaxDelay:     5 * time.Second,
+		},
 		cancelFuncs:    make(map[string]context.CancelFunc),
 	}
 }
@@ -191,6 +123,11 @@ func (wp *WorkerPool) WithConfig(defaultTimeout time.Duration, maxAttempts int, 
 	wp.maxAttempts = maxAttempts
 	wp.retryInitDelay = retryInitDelay
 	wp.retryMaxDelay = retryMaxDelay
+	wp.retryPolicy = &execution.RetryPolicy{
+		MaxAttempts:  maxAttempts,
+		InitialDelay: retryInitDelay,
+		MaxDelay:     retryMaxDelay,
+	}
 	return wp
 }
 
@@ -290,11 +227,15 @@ func (wp *WorkerPool) process(workerID string, job *Job) {
 	wp.cancelFuncs[job.ID] = cancel
 	wp.cancelMu.Unlock()
 
+	// Register with Manager for external cancellation (e.g. API cancel request)
+	wp.manager.RegisterCancelFunc(job.ID, cancel)
+
 	defer func() {
 		// Unregister cancel func
 		wp.cancelMu.Lock()
 		delete(wp.cancelFuncs, job.ID)
 		wp.cancelMu.Unlock()
+		wp.manager.UnregisterCancelFunc(job.ID)
 		cancel()
 	}()
 
@@ -371,7 +312,7 @@ func (wp *WorkerPool) process(workerID string, job *Job) {
 			return
 		}
 
-		if !IsRetryableError(execErr) {
+		if !execution.IsRetryableError(execErr) {
 			log.Printf("[jobs] job %s error not retryable: %v", job.ID, execErr)
 			if err := wp.manager.FailJob(job, execErr); err != nil {
 				log.Printf("[jobs] failed to persist failure for job %s: %v", job.ID, err)
@@ -380,7 +321,7 @@ func (wp *WorkerPool) process(workerID string, job *Job) {
 		}
 
 		// S9 — Schedule retry with backoff
-		delay := wp.calcBackoff(attempt)
+		delay := wp.retryPolicy.Backoff(attempt)
 		log.Printf("[jobs] job %s attempt %d failed, retrying in %v", job.ID, attempt, delay)
 
 		// Mark as Failed then schedule retry
@@ -521,13 +462,13 @@ func (wp *WorkerPool) executeWithRetry(ctx context.Context, job *Job) (map[strin
 		}
 
 		// S9 — Only retry transient errors
-		if !IsRetryableError(lastErr) {
+		if !execution.IsRetryableError(lastErr) {
 			log.Printf("[jobs] job %s error not retryable: %v", job.ID, lastErr)
 			break
 		}
 
 		// S9 — Exponential backoff
-		delay := wp.calcBackoff(attempt)
+		delay := wp.retryPolicy.Backoff(attempt)
 		log.Printf("[jobs] job %s attempt %d failed, retrying in %v: %v", job.ID, attempt, delay, lastErr)
 
 		// Schedule retry in DB (Failed → RetryWaiting)
@@ -553,12 +494,17 @@ func (wp *WorkerPool) executeWithRetry(ctx context.Context, job *Job) (map[strin
 }
 
 // calcBackoff calculates exponential backoff delay for retry (S9).
+// Deprecated: use RetryPolicy().Backoff(attempt) instead.
 func (wp *WorkerPool) calcBackoff(attempt int) time.Duration {
-	delay := float64(wp.retryInitDelay) * math.Pow(2, float64(attempt-1))
-	if delay > float64(wp.retryMaxDelay) {
-		delay = float64(wp.retryMaxDelay)
+	if wp.retryPolicy == nil {
+		// Fallback for tests that directly initialize WorkerPool
+		wp.retryPolicy = &execution.RetryPolicy{
+			MaxAttempts:  wp.maxAttempts,
+			InitialDelay: wp.retryInitDelay,
+			MaxDelay:     wp.retryMaxDelay,
+		}
 	}
-	return time.Duration(delay)
+	return wp.retryPolicy.Backoff(attempt)
 }
 
 // getFloat64, getInt, getInt64 are kept from original code.

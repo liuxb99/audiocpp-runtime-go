@@ -176,6 +176,17 @@ func (a *Adapter) Diagnostics() backend.Diagnostics {
 	}
 }
 
+// ListVoices 查詢指定模型支援的語音清單。
+func (a *Adapter) ListVoices(ctx context.Context, modelID string) (*backend.VoiceListResult, error) {
+	resp, err := a.client.ListVoices(ctx, modelID)
+	if err != nil {
+		return nil, convertError(err)
+	}
+	return &backend.VoiceListResult{
+		Voices: resp.Voices,
+	}, nil
+}
+
 // ---------------------------------------------------------------------------
 // 內部 Submit 實作
 // ---------------------------------------------------------------------------

@@ -209,7 +209,7 @@ func (r *Runtime) StartWorkers(count int) {
 	mapper := execution.NewDefaultMapper()
 	gate := execution.NewDefaultGate(r.backendMgr)
 	executor := execution.NewDefaultExecutor(r.backendMgr, mapper, gate)
-	jobExecutor := execution.NewJobExecutorAdapter(executor)
+	jobExecutor := jobs.NewJobExecutorAdapter(executor)
 
 	r.workerPool = jobs.NewWorkerPool(r.jobMgr, jobExecutor, count)
 	// Apply configuration from config

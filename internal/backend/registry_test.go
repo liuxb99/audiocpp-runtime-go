@@ -60,6 +60,10 @@ func (t *testFakeBackend) Diagnostics() Diagnostics {
 	}
 }
 
+func (t *testFakeBackend) ListVoices(ctx context.Context, modelID string) (*VoiceListResult, error) {
+	return &VoiceListResult{Voices: []string{"voice-1"}}, nil
+}
+
 // ── Registry Tests ─────────────────────────────────────────────────────
 
 func TestRegistry_RegisterCreateHas(t *testing.T) {

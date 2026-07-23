@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/liuxb99/audiocpp-runtime-go/internal/backend"
-	"github.com/liuxb99/audiocpp-runtime-go/internal/jobs"
 )
 
 // Mapper 定義 Job 與後端請求/回應之間的轉換介面。
@@ -14,15 +13,15 @@ import (
 type Mapper interface {
 	// ToInferenceRequest 將 Job 轉換為後端推理請求。
 	//
-	// 應從 job.Request (map[string]interface{}) 中提取 typed 欄位，
+	// 應從 req.Request (map[string]interface{}) 中提取 typed 欄位，
 	// 並回傳 error 若缺少必要欄位。禁止直接傳遞 map 作為唯一模型。
-	ToInferenceRequest(job *jobs.Job) (*backend.InferenceRequest, error)
+	ToInferenceRequest(req *ExecutionRequest) (*backend.InferenceRequest, error)
 
 	// FromInferenceResponse 將後端推理回應轉換為結構化 Result。
 	FromInferenceResponse(resp *backend.InferenceResponse) (*Result, error)
 
 	// TaskTypeToCapability 將任務類型映射為後端能力。
-	TaskTypeToCapability(taskType jobs.Type) (backend.Capability, error)
+	TaskTypeToCapability(taskType string) (backend.Capability, error)
 }
 
 // InferenceType 為後端推理請求類型的字串常量。
@@ -52,63 +51,54 @@ func NewDefaultMapper() *DefaultMapper {
 // ToInferenceRequest 將 Job 轉換為 backend.InferenceRequest。
 //
 // 從 job.Request map 中提取必要欄位；若缺少必填欄位則回傳 error。
-func (m *DefaultMapper) ToInferenceRequest(job *jobs.Job) (*backend.InferenceRequest, error) {
-	if job == nil {
-		return nil, NewError(ErrCodeInvalidRequest, "job is nil", nil)
+func (m *DefaultMapper) ToInferenceRequest(req *ExecutionRequest) (*backend.InferenceRequest, error) {
+	if req == nil {
+		return nil, NewError(ErrCodeInvalidRequest, "execution request is nil", nil)
 	}
 
-	req := &backend.InferenceRequest{
-		Model:   job.ModelID,
+	ir := &backend.InferenceRequest{
+		Model:   req.ModelID,
 		Options: make(map[string]interface{}),
 	}
 
-	switch job.Type {
-	case jobs.TypeASR:
-		req.TaskType = string(InferenceTypeASR)
+	switch req.Type {
+	case string(InferenceTypeASR):
+		ir.TaskType = string(InferenceTypeASR)
 		// 從 Request 中提取 AudioPath（可選）
-		if audioPath, ok := job.Request["audio_path"]; ok {
+		if audioPath, ok := req.Request["audio_path"]; ok {
 			if s, ok := audioPath.(string); ok {
-				req.AudioPath = s
+				ir.AudioPath = s
 			}
 		}
 		// 複製其他 options（排除已知欄位）
-		for k, v := range job.Request {
+		for k, v := range req.Request {
 			if k != "audio_path" {
-				req.Options[k] = v
+				ir.Options[k] = v
 			}
 		}
 
-	case jobs.TypeTTS:
-		req.TaskType = string(InferenceTypeTTS)
+	case string(InferenceTypeTTS):
+		ir.TaskType = string(InferenceTypeTTS)
 		// 必填欄位檢查：input / text
-		if _, ok := job.Request["input"]; !ok {
-			if _, ok2 := job.Request["text"]; !ok2 {
+		if _, ok := req.Request["input"]; !ok {
+			if _, ok2 := req.Request["text"]; !ok2 {
 				return nil, NewError(ErrCodeMissingRequiredField,
 					"TTS request missing required field: 'input' or 'text'", nil)
 			}
 		}
-		for k, v := range job.Request {
-			req.Options[k] = v
-		}
-
-	case jobs.TypeVoiceClone, jobs.TypeVoiceConversion, jobs.TypeSourceSep,
-		jobs.TypeMusicGen, jobs.TypeVAD, jobs.TypeDiarization, jobs.TypeAlignment,
-		jobs.TypeVoiceDesign:
-		req.TaskType = string(InferenceTypeTask)
-		// 通用任務：複製所有 request 參數
-		for k, v := range job.Request {
-			req.Options[k] = v
+		for k, v := range req.Request {
+			ir.Options[k] = v
 		}
 
 	default:
-		// 未知型別也視為通用任務
-		req.TaskType = string(InferenceTypeTask)
-		for k, v := range job.Request {
-			req.Options[k] = v
+		// 其他型別（voice_clone, voice_conversion, task 等）視為通用任務
+		ir.TaskType = string(InferenceTypeTask)
+		for k, v := range req.Request {
+			ir.Options[k] = v
 		}
 	}
 
-	return req, nil
+	return ir, nil
 }
 
 // FromInferenceResponse 將後端回應轉換為結構化 Result。
@@ -141,27 +131,27 @@ func (m *DefaultMapper) FromInferenceResponse(resp *backend.InferenceResponse) (
 }
 
 // TaskTypeToCapability 將 jobs.Type 映射為 backend.Capability。
-func (m *DefaultMapper) TaskTypeToCapability(taskType jobs.Type) (backend.Capability, error) {
+func (m *DefaultMapper) TaskTypeToCapability(taskType string) (backend.Capability, error) {
 	switch taskType {
-	case jobs.TypeASR:
+	case "asr":
 		return backend.CapASR, nil
-	case jobs.TypeTTS:
+	case "tts":
 		return backend.CapTTS, nil
-	case jobs.TypeVoiceClone:
+	case "voice_clone":
 		return backend.CapVoiceClone, nil
-	case jobs.TypeVoiceConversion:
+	case "voice_conversion":
 		return backend.CapVoiceConversion, nil
-	case jobs.TypeSourceSep:
+	case "source_separation":
 		return backend.CapSourceSeparation, nil
-	case jobs.TypeMusicGen:
+	case "music_generation":
 		return backend.CapMusicGeneration, nil
-	case jobs.TypeVAD:
+	case "vad":
 		return backend.CapVAD, nil
-	case jobs.TypeDiarization:
+	case "diarization":
 		return backend.CapDiarization, nil
-	case jobs.TypeAlignment:
+	case "alignment":
 		return backend.CapAlignment, nil
-	case jobs.TypeVoiceDesign:
+	case "voice_design":
 		return backend.CapVoiceDesign, nil
 	default:
 		return "", NewError(ErrCodeMappingFailed,

@@ -184,6 +184,14 @@ func (f *Fake) Diagnostics() backend.Diagnostics {
 	}
 }
 
+// ListVoices 查詢指定模型支援的語音清單。
+func (f *Fake) ListVoices(ctx context.Context, modelID string) (*backend.VoiceListResult, error) {
+	f.record("ListVoices")
+	return &backend.VoiceListResult{
+		Voices: []string{"voice-1", "voice-2"},
+	}, nil
+}
+
 // Reset 重置狀態、配置與呼叫記錄
 func (f *Fake) Reset() {
 	f.mu.Lock()

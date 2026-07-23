@@ -12,7 +12,6 @@ import (
 
 	"github.com/liuxb99/audiocpp-runtime-go/internal/backend"
 	"github.com/liuxb99/audiocpp-runtime-go/internal/execution"
-	"github.com/liuxb99/audiocpp-runtime-go/internal/jobs"
 )
 
 // === ExecuteBehavior 定義 ===
@@ -96,7 +95,7 @@ func NewFakeExecutor(config FakeExecutorConfig) *FakeExecutor {
 }
 
 // Execute 實作 Executor 介面。
-func (f *FakeExecutor) Execute(ctx context.Context, job *jobs.Job) (*execution.Result, error) {
+func (f *FakeExecutor) Execute(ctx context.Context, req *execution.ExecutionRequest) (*execution.Result, error) {
 	f.mu.Lock()
 	f.callIndex++
 	callIdx := f.callIndex
@@ -104,8 +103,8 @@ func (f *FakeExecutor) Execute(ctx context.Context, job *jobs.Job) (*execution.R
 
 	// 記錄呼叫
 	call := ExecuteCall{
-		JobID:           job.ID,
-		Attempt:         int(job.Progress), // 使用 Progress 近似 Attempt
+		JobID:           req.JobID,
+		Attempt:         req.Attempt,
 		ContextCanceled: ctx.Err() != nil,
 		Timestamp:       f.now(),
 	}
@@ -126,7 +125,7 @@ func (f *FakeExecutor) Execute(ctx context.Context, job *jobs.Job) (*execution.R
 
 	switch behav {
 	case BehaviorSuccess:
-		return f.makeResult(job), nil
+		return f.makeResult(req), nil
 
 	case BehaviorPermanentFail:
 		return nil, f.failError()
@@ -135,7 +134,7 @@ func (f *FakeExecutor) Execute(ctx context.Context, job *jobs.Job) (*execution.R
 		if callIdx <= failCount {
 			return nil, f.failError()
 		}
-		return f.makeResult(job), nil
+		return f.makeResult(req), nil
 
 	case BehaviorTimeout:
 		return nil, execution.ErrExecutionTimeout
@@ -151,7 +150,7 @@ func (f *FakeExecutor) Execute(ctx context.Context, job *jobs.Job) (*execution.R
 
 	case BehaviorSlowResponse:
 		f.sleep(slowDelay)
-		return f.makeResult(job), nil
+		return f.makeResult(req), nil
 
 	case BehaviorLateResponse:
 		f.sleep(slowDelay)
@@ -161,7 +160,7 @@ func (f *FakeExecutor) Execute(ctx context.Context, job *jobs.Job) (*execution.R
 		return nil, execution.ErrCapabilityUnsupported
 
 	default:
-		return f.makeResult(job), nil
+		return f.makeResult(req), nil
 	}
 }
 
@@ -215,7 +214,7 @@ func (f *FakeExecutor) sleep(d time.Duration) {
 }
 
 // makeResult 根據配置或預設值建立結果。
-func (f *FakeExecutor) makeResult(job *jobs.Job) *execution.Result {
+func (f *FakeExecutor) makeResult(req *execution.ExecutionRequest) *execution.Result {
 	f.mu.Lock()
 	customResult := f.Result
 	f.mu.Unlock()
@@ -227,12 +226,12 @@ func (f *FakeExecutor) makeResult(job *jobs.Job) *execution.Result {
 
 	return &execution.Result{
 		BackendName: "fake",
-		Model:       job.ModelID,
-		Attempt:     1,
+		Model:       req.ModelID,
+		Attempt:     req.Attempt,
 		StartedAt:   f.now().Add(-100 * time.Millisecond),
 		CompletedAt: f.now(),
 		Duration:    100 * time.Millisecond,
-		TraceID:     fmt.Sprintf("fake-trace-%s", job.ID),
+		TraceID:     fmt.Sprintf("fake-trace-%s", req.JobID),
 	}
 }
 
@@ -349,7 +348,7 @@ type FakeMapper struct {
 	TaskTypeToCapabilityCalls int
 
 	// 記錄最後一次呼叫的參數
-	lastJob  *jobs.Job
+	lastReq  *execution.ExecutionRequest
 	lastResp *backend.InferenceResponse
 }
 
@@ -359,10 +358,10 @@ func NewFakeMapper(config FakeMapperConfig) *FakeMapper {
 }
 
 // ToInferenceRequest 實作 Mapper 介面。
-func (m *FakeMapper) ToInferenceRequest(job *jobs.Job) (*backend.InferenceRequest, error) {
+func (m *FakeMapper) ToInferenceRequest(req *execution.ExecutionRequest) (*backend.InferenceRequest, error) {
 	m.mu.Lock()
 	m.ToInferenceRequestCalls++
-	m.lastJob = job
+	m.lastReq = req
 	config := m.config
 	m.mu.Unlock()
 
@@ -375,8 +374,8 @@ func (m *FakeMapper) ToInferenceRequest(job *jobs.Job) (*backend.InferenceReques
 	}
 	// 預設回傳
 	return &backend.InferenceRequest{
-		Model:    job.ModelID,
-		TaskType: string(job.Type),
+		Model:    req.ModelID,
+		TaskType: req.Type,
 	}, nil
 }
 
@@ -403,7 +402,7 @@ func (m *FakeMapper) FromInferenceResponse(resp *backend.InferenceResponse) (*ex
 }
 
 // TaskTypeToCapability 實作 Mapper 介面。
-func (m *FakeMapper) TaskTypeToCapability(taskType jobs.Type) (backend.Capability, error) {
+func (m *FakeMapper) TaskTypeToCapability(taskType string) (backend.Capability, error) {
 	m.mu.Lock()
 	m.TaskTypeToCapabilityCalls++
 	config := m.config
@@ -425,6 +424,6 @@ func (m *FakeMapper) Reset() {
 	m.ToInferenceRequestCalls = 0
 	m.FromInferenceResponseCalls = 0
 	m.TaskTypeToCapabilityCalls = 0
-	m.lastJob = nil
+	m.lastReq = nil
 	m.lastResp = nil
 }
