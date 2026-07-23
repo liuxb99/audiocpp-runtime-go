@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/liuxb99/audiocpp-runtime-go/internal/audiocpp"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/backend"
 )
 
 func (s *Server) handleASR(w http.ResponseWriter, r *http.Request) {
@@ -30,10 +31,33 @@ func (s *Server) handleASR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.audiocppCli.TranscribeJSON(r.Context(), &req)
+	// 經由 BackendManager 提交，而非直接呼叫 Client
+	opts := make(map[string]interface{})
+	opts["audio"] = req.Audio
+	if req.Language != "" {
+		opts["language"] = req.Language
+	}
+
+	resp, err := s.runtimeRef.BackendManager().Submit(r.Context(), &backend.InferenceRequest{
+		Model:    req.Model,
+		TaskType: "asr",
+		Options:  opts,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "AUDIOCPP_ERROR", err.Error())
 		return
+	}
+
+	// 轉換回 TranscribeResponse 以保持 API 相容
+	result := &audiocpp.TranscribeResponse{
+		Text: resp.Text,
+	}
+	if resp.Data != nil {
+		if timing, ok := resp.Data["timing"]; ok {
+			if t, ok := timing.(*audiocpp.TimingInfo); ok {
+				result.Timing = t
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, result)
@@ -84,10 +108,33 @@ func (s *Server) handleASRMultipart(w http.ResponseWriter, r *http.Request) {
 		opts["text"] = text
 	}
 
-	result, err := s.audiocppCli.TranscribeMultipart(r.Context(), modelID, tmpFile, opts)
+	// 經由 BackendManager 提交，而非直接呼叫 Client
+	optsMap := make(map[string]interface{})
+	for k, v := range opts {
+		optsMap[k] = v
+	}
+
+	resp, err := s.runtimeRef.BackendManager().Submit(r.Context(), &backend.InferenceRequest{
+		Model:     modelID,
+		TaskType:  "asr",
+		AudioPath: tmpFile,
+		Options:   optsMap,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "AUDIOCPP_ERROR", err.Error())
 		return
+	}
+
+	// 轉換回 TranscribeResponse 以保持 API 相容
+	result := &audiocpp.TranscribeResponse{
+		Text: resp.Text,
+	}
+	if resp.Data != nil {
+		if timing, ok := resp.Data["timing"]; ok {
+			if t, ok := timing.(*audiocpp.TimingInfo); ok {
+				result.Timing = t
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, result)

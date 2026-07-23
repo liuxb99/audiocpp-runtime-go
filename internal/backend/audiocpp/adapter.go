@@ -11,11 +11,12 @@ import (
 )
 
 // Adapter 包裝 audiocpp.Process + Client 實作 Backend interface
+//
+// 狀態完全依賴 core.Process.state，不維護自有 state 欄位以消除競態。
 type Adapter struct {
 	proc   *core.Process
 	client *core.Client
 	id     string
-	state  backend.State
 	caps   []backend.Capability
 }
 
@@ -28,7 +29,6 @@ func New(proc *core.Process, client *core.Client, caps ...backend.Capability) *A
 		proc:   proc,
 		client: client,
 		id:     "audiocpp",
-		state:  backend.StateStopped,
 	}
 	if len(caps) > 0 {
 		a.caps = make([]backend.Capability, len(caps))
@@ -49,32 +49,43 @@ func (a *Adapter) Start(ctx context.Context, cfg backend.StartConfig) error {
 	if err := a.proc.Start(ctx); err != nil {
 		return convertStartError(err)
 	}
-	a.state = backend.StateStarting
 	return nil
 }
 
 // WaitForReady 等待後端就緒
+//
+// 1. 先等 TCP 層就緒（proc.WaitForReady 成功後設 Process state = Running）
+// 2. 再等 HTTP 健康檢查真正可用
+// 任一階段失敗則 cleanup child 並回傳型別化錯誤。
 func (a *Adapter) WaitForReady(ctx context.Context, timeoutSec int) error {
+	// TCP 層就緒
 	if err := a.proc.WaitForReady(ctx, time.Duration(timeoutSec)*time.Second); err != nil {
 		return convertReadyError(err)
 	}
 
-	// TCP 層就緒後，再等待 HTTP 層健康檢查真正可用
-	// 解決測試環境快速順序執行時 HTTP 伺服器短暫未就緒的競爭問題
-	waitCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
+	// HTTP 健康檢查 — 最多重試 3 次，合計不超過 3 秒
+	healthCtx, healthCancel := context.WithTimeout(ctx, 3*time.Second)
+	defer healthCancel()
+
+	var lastErr error
 	for i := 0; i < 3; i++ {
-		if _, err := a.client.Health(waitCtx); err == nil {
-			break
+		if _, err := a.client.Health(healthCtx); err == nil {
+			// 成功：proc.WaitForReady 已將 Process state 設為 Running
+			return nil
+		} else {
+			lastErr = err
 		}
 		select {
-		case <-waitCtx.Done():
+		case <-healthCtx.Done():
+			lastErr = healthCtx.Err()
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
 
-	a.state = backend.StateRunning
-	return nil
+	// HTTP 健康全部失敗：cleanup child（proc.Stop 會將 Process state 設為 Stopped）
+	a.proc.Stop()
+	return backend.NewError(backend.ErrCodeHealthFailed,
+		"HTTP health check failed after TCP ready", lastErr)
 }
 
 // Health 健康檢查
@@ -94,25 +105,22 @@ func (a *Adapter) Health(ctx context.Context) (*backend.Health, error) {
 // Stop 優雅停止
 func (a *Adapter) Stop() error {
 	if a.proc.StopGraceful() {
-		a.state = backend.StateStopped
 		return nil
 	}
 	// 優雅停止失敗，回退到強制停止
-	err := a.proc.Stop()
-	a.state = backend.StateStopped
-	return err
+	return a.proc.Stop()
 }
 
 // ForceStop 強制停止
 func (a *Adapter) ForceStop() error {
-	err := a.proc.ForceStop()
-	a.state = backend.StateStopped
-	return err
+	return a.proc.ForceStop()
 }
 
 // State 回傳目前狀態
+//
+// 即時從 Process.state 讀取並做明確 mapping 以消除競態。
 func (a *Adapter) State() backend.State {
-	return backend.State(a.proc.State())
+	return mapProcessState(a.proc.State())
 }
 
 // PID 回傳子進程 PID（若無則回傳 -1）
@@ -382,6 +390,24 @@ func convertError(err error) error {
 	}
 
 	return backend.NewError(backend.ErrCodeInferenceFailed, err.Error(), err)
+}
+
+// mapProcessState 將 core.ProcessState 明確映射為 backend.State
+func mapProcessState(s core.ProcessState) backend.State {
+	switch s {
+	case core.StateStopped:
+		return backend.StateStopped
+	case core.StateStarting:
+		return backend.StateStarting
+	case core.StateRunning:
+		return backend.StateRunning
+	case core.StateStopping:
+		return backend.StateStopping
+	case core.StateCrashed:
+		return backend.StateCrashed
+	default:
+		return backend.StateStopped
+	}
 }
 
 // NewBuilder 建立一個回傳 Adapter 的工廠函式，供 Runtime 註冊使用
