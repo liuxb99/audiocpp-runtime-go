@@ -1,0 +1,32 @@
+{
+    "id":  "f686b2c5-d770-4935-a19c-c215200fd53b",
+    "type":  "asr",
+    "status":  "succeeded",
+    "model_id":  "citrinet_256",
+    "request":  {
+                    "audio_path":  "testdata/audio/english_short_16k.wav",
+                    "language":  "en"
+                },
+    "result":  {
+                   "attempt":  1,
+                   "backend_name":  "audiocpp",
+                   "backend_version":  "unknown",
+                   "completed_at":  "2026-07-23T18:02:26.6633227Z",
+                   "duration_ms":  136,
+                   "model":  "citrinet_256",
+                   "output_ref":  "",
+                   "started_at":  "2026-07-23T18:02:26.5264739Z",
+                   "trace_id":  ""
+               },
+    "progress":  100,
+    "created_at":  "2026-07-23T18:02:26.5027601Z",
+    "started_at":  "2026-07-23T18:02:26.5264739Z",
+    "completed_at":  "2026-07-23T18:02:26.6643484Z",
+    "priority":  0,
+    "worker_id":  "worker-1",
+    "claimed_at":  "2026-07-23T18:02:26.5264739Z",
+    "lease_until":  "2026-07-23T18:02:56.5237708Z",
+    "attempt":  1,
+    "backend_name":  "audiocpp",
+    "backend_version":  "unknown"
+}

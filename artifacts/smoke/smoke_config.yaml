@@ -1,0 +1,34 @@
+server:
+  host: "127.0.0.1"
+  port: 18091
+audiocpp:
+  server_path: "D:/AI-Tools/audio-cpp-runtime-go/audio.cpp/build/windows-cpu-release/bin/audiocpp_server.exe"
+  working_dir: "D:/AI-Tools/audio-cpp-runtime-go/audio.cpp"
+  backend: "cpu"
+  host: "127.0.0.1"
+  port: 18092
+  startup_timeout_seconds: 120
+  request_timeout_seconds: 600
+  auto_restart: false
+  max_restart_attempts: 0
+  lazy_load: false
+  model_spec_override: "D:/AI-Tools/audio-cpp-runtime-go/audio.cpp/model_specs"
+  models:
+    - id: "citrinet_256"
+      path: "D:/AI-Tools/audio-cpp-runtime-go/audio.cpp/models/citrinet"
+      family: "citrinet_asr"
+      task: "asr"
+      mode: "offline"
+storage:
+  sqlite_path: "data/runtime-job-smoke.db"
+models:
+  root_dir: "models"
+  registry_path: "data/models-job-smoke.json"
+outputs:
+  root_dir: "outputs"
+  retain_days: 1
+jobs:
+  workers: 1
+  queue_size: 10
+  default_timeout_seconds: 300
+  max_attempts: 1

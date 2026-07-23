@@ -154,7 +154,7 @@ func (r *Runtime) Init(ctx context.Context) error {
 	// 初始化 Backend Manager（使用專屬 Registry，避免跨測試共享 builder）
 	reg := backend.NewRegistry()
 	r.backendMgr = backend.NewManager(reg)
-	builder := audiocppadapter.NewBuilder(r.proc, r.client)
+	builder := audiocppadapter.NewBuilder(r.proc, r.client, backend.CapASR, backend.CapTTS, backend.CapVoiceClone, backend.CapVAD, backend.CapDiarization, backend.CapAlignment)
 	reg.MustRegister("audiocpp", builder)
 	if err := r.backendMgr.Select("audiocpp"); err != nil {
 		return fmt.Errorf("select backend: %w", err)

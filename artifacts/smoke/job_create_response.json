@@ -1,0 +1,14 @@
+{
+    "id":  "f686b2c5-d770-4935-a19c-c215200fd53b",
+    "type":  "asr",
+    "status":  "queued",
+    "model_id":  "citrinet_256",
+    "request":  {
+                    "audio_path":  "testdata/audio/english_short_16k.wav",
+                    "language":  "en"
+                },
+    "progress":  0,
+    "created_at":  "2026-07-23T18:02:26.5027601Z",
+    "priority":  0,
+    "attempt":  0
+}
