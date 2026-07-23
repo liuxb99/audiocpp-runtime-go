@@ -17,11 +17,13 @@ import (
 )
 
 type Runtime struct {
-	mu     sync.RWMutex
-	cfg    *config.Config
-	proc   *audiocpp.Process
-	cli    *audiocpp.CLIExecutor
-	client *audiocpp.Client
+	mu      sync.RWMutex
+	stateMu sync.Mutex
+	state   RuntimeState
+	cfg     *config.Config
+	proc    *audiocpp.Process
+	cli     *audiocpp.CLIExecutor
+	client  *audiocpp.Client
 
 	db         *storage.DB
 	jobRepo    *storage.JobsRepository
@@ -35,7 +37,14 @@ type Runtime struct {
 	lifetimeCtx context.Context
 	lifetimeCnl context.CancelFunc
 	startTime   time.Time
-	started     bool
+
+	readyTime      time.Time
+	childStartTime time.Time
+	shutdownTime   time.Time
+
+	lastSchedule *ShutdownSchedule
+
+	httpShutdownFn func(timeout time.Duration) error
 }
 
 // ShutdownResult captures the outcome of a Runtime.Shutdown call.
@@ -48,14 +57,20 @@ type ShutdownResult struct {
 }
 
 func New(cfg *config.Config) *Runtime {
-	return &Runtime{
+	r := &Runtime{
 		cfg:       cfg,
 		startTime: time.Now(),
+		state:     StateCreated,
 	}
+	return r
 }
 
 func (r *Runtime) Init(ctx context.Context) error {
 	log.Printf("[runtime] initializing")
+
+	if err := r.transition(StateCreated, StateInitializing); err != nil {
+		return fmt.Errorf("state transition: %w", err)
+	}
 
 	db, err := storage.NewDB(r.cfg.Storage.SqlitePath)
 	if err != nil {
@@ -140,10 +155,15 @@ func (r *Runtime) StartAudioCpp(ctx context.Context) error {
 		return fmt.Errorf("process not initialized")
 	}
 
+	if err := r.transition(StateInitializing, StateStarting); err != nil {
+		return fmt.Errorf("state transition: %w", err)
+	}
+
 	log.Printf("[runtime] starting audiocpp server")
 	if err := r.proc.Start(r.lifetimeCtx); err != nil {
 		return fmt.Errorf("start audiocpp server: %w", err)
 	}
+	r.childStartTime = time.Now()
 
 	readyCtx, cancel := context.WithTimeout(r.lifetimeCtx,
 		time.Duration(r.cfg.AudioCpp.StartupTimeoutSec)*time.Second)
@@ -154,7 +174,12 @@ func (r *Runtime) StartAudioCpp(ctx context.Context) error {
 		return fmt.Errorf("audiocpp server not ready: %w", err)
 	}
 
+	r.readyTime = time.Now()
 	log.Printf("[runtime] audiocpp server is ready")
+
+	if err := r.transition(StateStarting, StateReady); err != nil {
+		return fmt.Errorf("state transition: %w", err)
+	}
 
 	if err := r.modelReg.Refresh(ctx, r.client); err != nil {
 		log.Printf("[runtime] warning: model registry refresh failed: %v", err)
@@ -166,7 +191,10 @@ func (r *Runtime) StartAudioCpp(ctx context.Context) error {
 func (r *Runtime) StartWorkers(count int) {
 	r.workerPool = jobs.NewWorkerPool(r.jobMgr, r.client, count)
 	r.workerPool.Start()
-	r.started = true
+
+	if err := r.transition(StateReady, StateRunning); err != nil {
+		log.Printf("[runtime] warning: state transition to running: %v", err)
+	}
 }
 
 func (r *Runtime) StopWorkers() {
@@ -179,74 +207,147 @@ func (r *Runtime) Shutdown(ctx context.Context) ShutdownResult {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	r.shutdownTime = time.Now()
+	schedule := NewShutdownSchedule()
+
 	result := ShutdownResult{
 		RequestAccepted: true,
 	}
 
+	// Step 0: check current state — if already stopped, return immediately
+	r.stateMu.Lock()
+	currentState := r.state
+	r.stateMu.Unlock()
+
+	if currentState == StateStopped {
+		log.Printf("[runtime] already stopped, shutdown skipped")
+		result.RuntimeExited = true
+		result.ChildExited = true
+		r.lastSchedule = schedule
+		return result
+	}
+
+	// Transition to Stopping
+	if err := r.transitionLocked(StateCreated, StateStopping); err != nil {
+		// try other valid from-states
+		_ = r.transitionFromAnyToStoppingLocked()
+	}
+
 	log.Printf("[runtime] shutting down")
 
-	// Stop workers first
-	if r.workerPool != nil {
-		r.workerPool.Stop()
-	}
+	// Step 1: RequestAccepted
+	schedule.ExecuteStep(StepRequestAccepted, func() error {
+		return nil
+	}, 0)
 
-	// --- Graceful child process stop ---
-	childPID := 0
-	if r.proc != nil {
-		childPID = r.proc.Pid()
-		// Try graceful stop first
-		gracefulOK := r.proc.StopGraceful()
-		if gracefulOK {
-			result.GracefulExited = true
-			result.ForceKillUsed = false
-			log.Printf("[runtime] child process (pid=%d) exited gracefully", childPID)
-		} else {
-			// Graceful failed, force kill
-			log.Printf("[runtime] graceful stop failed, force killing child (pid=%d)", childPID)
-			if err := r.proc.Stop(); err != nil {
-				log.Printf("[runtime] error force-stopping audiocpp: %v", err)
+	// Step 2: StopWorkers
+	schedule.ExecuteStep(StepStopWorkers, func() error {
+		r.StopWorkers()
+		return nil
+	}, 5*time.Second)
+
+	// Step 3: FlushQueue — wait for job queue to drain
+	schedule.ExecuteStep(StepFlushQueue, func() error {
+		if r.jobMgr != nil {
+			deadline := time.Now().Add(5 * time.Second)
+			for time.Now().Before(deadline) {
+				if r.jobMgr.QueueLen() == 0 {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
 			}
-			result.GracefulExited = false
-			result.ForceKillUsed = true
 		}
-	}
+		return nil
+	}, 5*time.Second)
 
-	// Check if child exited
+	// Step 4: StopChild
+	childPID := 0
+	schedule.ExecuteStep(StepStopChild, func() error {
+		if r.proc == nil {
+			return nil
+		}
+		childPID = r.proc.Pid()
+		gracefulOK := r.proc.StopGraceful()
+		if !gracefulOK {
+			log.Printf("[runtime] graceful stop failed, force killing child (pid=%d)", childPID)
+			return r.proc.Stop()
+		}
+		return nil
+	}, 10*time.Second)
+
 	if childPID > 0 {
+		result.GracefulExited = !platform.ProcessExists(childPID)
+		result.ForceKillUsed = !result.GracefulExited
 		result.ChildExited = !platform.ProcessExists(childPID)
 	} else {
-		result.ChildExited = true // no child to wait for
+		result.ChildExited = true
 	}
 
 	// Cancel lifetime context
-	r.lifetimeCnl()
-
-	// Save model registry
-	if r.modelReg != nil {
-		if err := r.modelReg.Save(); err != nil {
-			log.Printf("[runtime] error saving model registry: %v", err)
-		}
+	if r.lifetimeCnl != nil {
+		r.lifetimeCnl()
 	}
 
-	// Cleanup outputs
-	if r.outputMgr != nil {
-		if _, err := r.outputMgr.Cleanup(ctx); err != nil {
-			log.Printf("[runtime] error cleaning outputs: %v", err)
+	// Step 5: SaveState
+	schedule.ExecuteStep(StepSaveState, func() error {
+		if r.modelReg != nil {
+			return r.modelReg.Save()
 		}
-	}
+		return nil
+	}, 5*time.Second)
 
-	// Close database
-	if r.db != nil {
-		if err := r.db.Close(); err != nil {
-			log.Printf("[runtime] error closing database: %v", err)
+	// Step 6: CloseDB
+	schedule.ExecuteStep(StepCloseDB, func() error {
+		if r.db != nil {
+			return r.db.Close()
 		}
-	}
+		return nil
+	}, 5*time.Second)
 
-	// Runtime has completed shutdown
+	// Step 7: StopHTTP
+	schedule.ExecuteStep(StepStopHTTP, func() error {
+		if r.httpShutdownFn != nil {
+			return r.httpShutdownFn(10 * time.Second)
+		}
+		return nil
+	}, 10*time.Second)
+
+	// Step 8: ExitMain
+	schedule.ExecuteStep(StepExitMain, func() error {
+		return nil
+	}, 0)
+
 	result.RuntimeExited = true
+	r.lastSchedule = schedule
+
+	// Transition to Stopped
+	r.stateMu.Lock()
+	r.state = StateStopped
+	r.stateMu.Unlock()
 
 	log.Printf("[runtime] shutdown complete")
 	return result
+}
+
+func (r *Runtime) transitionFromAnyToStoppingLocked() error {
+	allowedSources := []RuntimeState{
+		StateCreated, StateInitializing, StateStarting, StateReady, StateRunning,
+	}
+	for _, src := range allowedSources {
+		if r.state == src {
+			r.state = StateStopping
+			return nil
+		}
+	}
+	return fmt.Errorf("cannot transition from %s to stopping", StateString(r.state))
+}
+
+func (r *Runtime) SetHTTPServerShutdownFn(fn func(timeout time.Duration) error) {
+	r.httpShutdownFn = fn
+}
+
+func (r *Runtime) LastShutdownSchedule() *ShutdownSchedule {
+	return r.lastSchedule
 }
 
 func (r *Runtime) Client() *audiocpp.Client {
@@ -303,4 +404,16 @@ func (r *Runtime) IsAudioCppAlive() bool {
 	defer cancel()
 	_, err := r.client.Health(ctx)
 	return err == nil
+}
+
+func (r *Runtime) ReadyTime() time.Time {
+	return r.readyTime
+}
+
+func (r *Runtime) ChildStartTime() time.Time {
+	return r.childStartTime
+}
+
+func (r *Runtime) ShutdownTime() time.Time {
+	return r.shutdownTime
 }

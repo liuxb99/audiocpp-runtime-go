@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/liuxb99/audiocpp-runtime-go/internal/audiocpp"
+	"github.com/liuxb99/audiocpp-runtime-go/internal/runtime"
 )
 
 func (s *Server) handleListVoices(w http.ResponseWriter, r *http.Request) {
@@ -65,9 +67,32 @@ func (s *Server) handleListCapabilities(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, capabilities)
 }
 
+func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if s.runtimeRef == nil {
+		writeError(w, http.StatusInternalServerError, "NO_RUNTIME", "runtime reference not available")
+		return
+	}
+
+	d := s.runtimeRef.Diagnostics()
+	diagJSON, err := d.ExportJSON()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "DIAGNOSTICS_ERROR", err.Error())
+		return
+	}
+
+	diagPath := filepath.Join(s.config.Storage.SqlitePath, "..", "runtime_diagnostics.json")
+	if absPath, err := filepath.Abs(diagPath); err == nil {
+		if err := d.ExportToFile(absPath); err != nil {
+			s.logger.Printf("[api] failed to write diagnostics file: %v", err)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(diagJSON)
+}
+
 // handleShutdown triggers graceful shutdown of the entire runtime.
-// It synchronously stops workers, the audiocpp child, saves state,
-// cleans up outputs, closes the database, then returns the shutdown result.
 // After the response is sent it signals the main goroutine to exit.
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	// Mark server as shutting down to reject new requests
@@ -82,8 +107,15 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	// Execute full shutdown synchronously
 	result := s.runtimeRef.Shutdown(r.Context())
 
-	// Send response first, then signal main to exit
-	writeJSON(w, http.StatusOK, result)
+	// Send response — embed ShutdownResult fields alongside schedule
+	type shutdownResponse struct {
+		runtime.ShutdownResult
+		Schedule *runtime.ShutdownSchedule `json:"schedule,omitempty"`
+	}
+	writeJSON(w, http.StatusOK, shutdownResponse{
+		ShutdownResult: result,
+		Schedule:       s.runtimeRef.LastShutdownSchedule(),
+	})
 
 	// Signal main goroutine that API shutdown is complete
 	// so it can stop the HTTP server and exit the process.

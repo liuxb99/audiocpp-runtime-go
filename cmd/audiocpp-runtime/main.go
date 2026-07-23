@@ -79,6 +79,9 @@ func main() {
 		log.Printf("[main] shutdown result: request_accepted=%v graceful_exited=%v force_kill=%v runtime_exited=%v child_exited=%v",
 			result.RequestAccepted, result.GracefulExited, result.ForceKillUsed,
 			result.RuntimeExited, result.ChildExited)
+		if schedule := rt.LastShutdownSchedule(); schedule != nil {
+			log.Printf("[main] shutdown schedule:\n%s", schedule.Summary())
+		}
 
 		// Then stop the HTTP server
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)

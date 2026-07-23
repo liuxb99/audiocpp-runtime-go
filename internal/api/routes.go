@@ -68,6 +68,9 @@ func (s *Server) registerRoutes() {
 	// Capabilities
 	r.HandleFunc("/capabilities", s.handleListCapabilities).Methods(http.MethodGet)
 
+	// Runtime
+	r.HandleFunc("/runtime/diagnostics", s.handleDiagnostics).Methods(http.MethodGet)
+
 	// Shutdown
 	r.HandleFunc("/shutdown", s.handleShutdown).Methods(http.MethodPost)
 }

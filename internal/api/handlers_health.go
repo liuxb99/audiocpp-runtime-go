@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"time"
+
+	"github.com/liuxb99/audiocpp-runtime-go/internal/runtime"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -19,6 +21,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	runningJobs, _ := s.jobManager.ListJobs(10000, 0, "running")
 
 	uptime := time.Since(s.startTime).Seconds()
+
+	var runtimeStateStr string
+	if s.runtimeRef != nil {
+		runtimeStateStr = runtime.StateString(s.runtimeRef.CurrentState())
+	}
 
 	var audiocppState string
 	audiocppPID := 0
@@ -44,6 +51,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":         "ok",
 		"version":        "1.0.0",
+		"runtime_state":  runtimeStateStr,
 		"audiocpp_alive": alive,
 		"audiocpp_state": audiocppState,
 		"audiocpp_pid":   audiocppPID,
