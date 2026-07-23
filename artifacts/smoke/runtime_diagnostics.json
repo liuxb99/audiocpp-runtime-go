@@ -1,0 +1,15 @@
+{
+    "startup_time":  "2026-07-23T21:34:32.26697+08:00",
+    "ready_time":  "2026-07-23T21:34:32.7965525+08:00",
+    "child_start_time":  "2026-07-23T21:34:32.2937402+08:00",
+    "shutdown_time":  "0001-01-01T00:00:00Z",
+    "worker_count":  1,
+    "queue_length":  0,
+    "current_state":  4,
+    "current_state_str":  "running",
+    "current_backend":  "cpu",
+    "current_model":  "citrinet-asr",
+    "child_pid":  17868,
+    "memory_usage_bytes":  1708800,
+    "goroutine_count":  12
+}

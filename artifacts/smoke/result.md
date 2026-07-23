@@ -2,31 +2,34 @@
 
 | Field | Value |
 |-------|-------|
-| Execution Time | 2026-07-23 09:17:21 |
-| Total Duration | 9905ms |
-| Tested Source Commit | 794a3d2a5752808dea862d304709c54ad71e9055 |
-| Evidence Generated At | 2026-07-23T09:17:31.1247483+08:00 |
+| Execution Time | 2026-07-23 21:34:31 |
+| Total Duration | 10337ms |
+| Tested Source Commit | 074d4e72ec735842b7f8a2c8bfcea7bfb67e7872 |
+| Evidence Generated At | 2026-07-23T21:34:43.3972762+08:00 |
 | Evidence Commit | pending |
 | Go Runtime Binary | D:\AI-Tools\audio-cpp-runtime-go\bin\audiocpp-runtime.exe |
 | audiocpp_server Binary | D:\AI-Tools\audio-cpp-runtime-go\audio.cpp\build\windows-cpu-release\bin\audiocpp_server.exe |
 | audio.cpp Upstream SHA | cd91110b39ad48cdb594d893687e9d2ae8ce0dbf |
 | Citrinet Model SHA256 | {"citrinet_256.safetensors":"15AA3209AE85DE5197685D61A676BE66CD736F1448E712E3BC826F175B0EF810","citrinet_256_config.json":"2FD0FB838B92917DA5B0852885463D5FA0DFB5D2DC0415D7E5AEAE1F17631789","citrinet_256_tokenizer.model":"A7DBB4EAC08E0E7713D23C0E1B18C0A52E2278C540186728A249B77DC63D1177"} |
 | Input WAV SHA256 | C60AE0337844C9B4071E242DA4F916EF7113BE0AE90AF27971152879653EBC93 |
-| Runtime PID | 24660 |
-| Child PID | 8680 |
+| Runtime PID | 27212 |
+| Child PID | 17868 |
 | Request URL | POST http://127.0.0.1:18091/v1/audio/transcriptions |
 | HTTP Status | 200 |
 | Transcription | the quickbrown fox jumps over the lazy blog |
 | Expected Transcription | The quick brown fox jumps over the lazy dog |
 | Match Result | 6/9 words matched (66.7%) |
-| Inference Duration | 159ms |
-| Shutdown Duration | 6297ms |
+| Inference Duration | 160ms |
+| Shutdown Duration | 6999ms |
 | Shutdown Request Accepted | True |
-| Graceful Exit Completed | True |
-| Force Kill Used | False |
-| Child Force Killed (during shutdown) | True |
+| Runtime Graceful Exit Completed | True |
+| External Force Kill Used | False |
+| Child Graceful Exit Completed | True |
+| Child Force Kill Used | False |
 | Runtime Exited Cleanly | True |
 | Child Exited Cleanly | True |
+| Diagnostics Passed | True |
+| Runtime Diagnostics File | artifacts/smoke/runtime_diagnostics.json |
 | Response Received | True |
 | Response Parsed | True |
 | Runtime Port Free | True |

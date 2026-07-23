@@ -1,22 +1,22 @@
-2026/07/23 09:17:21 [runtime] initializing
-2026/07/23 09:17:21 [runtime] initialization complete
-2026/07/23 09:17:21 [runtime] starting audiocpp server
-2026/07/23 09:17:21 [audiocpp] started server (pid=8680)
-2026/07/23 09:17:21 [audiocpp:stderr] audio.cpp is optimized for CUDA. The 
-2026/07/23 09:17:21 [audiocpp:stderr] cpu server backend is intended for portability and testing, but performance and model coverage may be lower than CUDA.
-2026/07/23 09:17:22 [runtime] audiocpp server is ready
-2026/07/23 09:17:22 [jobs] started 1 workers
-2026/07/23 09:17:22 audiocpp-runtime started on 127.0.0.1:18091
-2026/07/23 09:17:22 API server starting on 127.0.0.1:18091
-2026/07/23 09:17:24 [api] shutdown requested via API
-2026/07/23 09:17:24 [runtime] shutting down
-2026/07/23 09:17:24 [jobs] all workers stopped
-2026/07/23 09:17:24 [audiocpp] sending graceful stop to (pid=8680)
-2026/07/23 09:17:24 [audiocpp] graceful stop error: exit status 1
-2026/07/23 09:17:29 [audiocpp] process (pid=8680) did not exit gracefully within deadline
-2026/07/23 09:17:29 [runtime] graceful stop failed, force killing child (pid=8680)
-2026/07/23 09:17:29 [audiocpp] stopping server (pid=8680)
-2026/07/23 09:17:29 [runtime] shutdown complete
-2026/07/23 09:17:29 [api] shutting down HTTP server
-2026/07/23 09:17:29 shutting down (API request)...
-2026/07/23 09:17:29 audiocpp-runtime exited
+2026/07/23 21:34:32 [runtime] initializing
+2026/07/23 21:34:32 [runtime] initialization complete
+2026/07/23 21:34:32 [runtime] starting audiocpp server
+2026/07/23 21:34:32 [audiocpp] started server (pid=17868)
+2026/07/23 21:34:32 [audiocpp:stderr] audio.cpp is optimized for CUDA. The 
+2026/07/23 21:34:32 [audiocpp:stderr] cpu server backend is intended for portability and testing, but performance and model coverage may be lower than CUDA.
+2026/07/23 21:34:32 [runtime] audiocpp server is ready
+2026/07/23 21:34:32 [jobs] started 1 workers
+2026/07/23 21:34:32 audiocpp-runtime started on 127.0.0.1:18091
+2026/07/23 21:34:32 API server starting on 127.0.0.1:18091
+2026/07/23 21:34:34 [api] shutdown requested via API
+2026/07/23 21:34:34 [runtime] shutting down
+2026/07/23 21:34:34 [jobs] all workers stopped
+2026/07/23 21:34:34 [audiocpp] sending graceful stop to (pid=17868)
+2026/07/23 21:34:34 [audiocpp] graceful stop error: exit status 1
+2026/07/23 21:34:39 [audiocpp] process (pid=17868) did not exit gracefully within deadline
+2026/07/23 21:34:39 [runtime] graceful stop failed, force killing child (pid=17868)
+2026/07/23 21:34:39 [audiocpp] stopping server (pid=17868)
+2026/07/23 21:34:40 [runtime] shutdown complete
+2026/07/23 21:34:40 [api] shutting down HTTP server
+2026/07/23 21:34:40 shutting down (API request)...
+2026/07/23 21:34:40 audiocpp-runtime exited
