@@ -1,23 +1,23 @@
-2026/07/24 02:04:14 [runtime] initializing
-2026/07/24 02:04:14 [runtime] initialization complete
-2026/07/24 02:04:14 [runtime] starting audiocpp server
-2026/07/24 02:04:14 [audiocpp] started server (pid=19800)
-2026/07/24 02:04:14 [audiocpp:stderr] audio.cpp is optimized for CUDA. The 
-2026/07/24 02:04:14 [audiocpp:stderr] cpu server backend is intended for portability and testing, but performance and model coverage may be lower than CUDA.
-2026/07/24 02:04:15 [runtime] audiocpp server is ready
-2026/07/24 02:04:15 [jobs] started 1 workers
-2026/07/24 02:04:15 audiocpp-runtime started on 127.0.0.1:18091
-2026/07/24 02:04:15 API server starting on 127.0.0.1:18091
-2026/07/24 02:04:18 [jobs] worker worker-1 picked up job 786f5d33-798f-448d-8004-7a32f36a97d7 (type=asr)
-2026/07/24 02:04:18 [execution] ASR result: text="the quickbrown fox jumps over the lazy blog"
-2026/07/24 02:04:20 [api] shutdown requested via API
-2026/07/24 02:04:20 [runtime] shutting down
-2026/07/24 02:04:20 [jobs] all workers stopped
-2026/07/24 02:04:20 [audiocpp] sending graceful stop to (pid=19800)
-2026/07/24 02:04:20 [audiocpp] graceful stop error: exit status 1
-2026/07/24 02:04:25 [audiocpp] process (pid=19800) did not exit gracefully within deadline
-2026/07/24 02:04:25 [audiocpp] stopping server (pid=19800)
-2026/07/24 02:04:25 [runtime] shutdown complete
-2026/07/24 02:04:25 [api] shutting down HTTP server
-2026/07/24 02:04:25 shutting down (API request)...
-2026/07/24 02:04:26 audiocpp-runtime exited
+2026/07/24 02:47:05 [runtime] initializing
+2026/07/24 02:47:05 [runtime] initialization complete
+2026/07/24 02:47:05 [runtime] starting audiocpp server
+2026/07/24 02:47:05 [audiocpp] started server (pid=19608)
+2026/07/24 02:47:05 [audiocpp:stderr] audio.cpp is optimized for CUDA. The 
+2026/07/24 02:47:05 [audiocpp:stderr] cpu server backend is intended for portability and testing, but performance and model coverage may be lower than CUDA.
+2026/07/24 02:47:06 [runtime] audiocpp server is ready
+2026/07/24 02:47:06 [jobs] started 1 workers
+2026/07/24 02:47:06 audiocpp-runtime started on 127.0.0.1:18091
+2026/07/24 02:47:06 API server starting on 127.0.0.1:18091
+2026/07/24 02:47:08 [jobs] worker worker-1 picked up job 14d33fee-78d7-4300-a60f-3a63d6a2cb46 (type=asr)
+2026/07/24 02:47:08 [execution] ASR result: text="the quickbrown fox jumps over the lazy blog"
+2026/07/24 02:47:10 [api] shutdown requested via API
+2026/07/24 02:47:10 [runtime] shutting down
+2026/07/24 02:47:10 [jobs] all workers stopped
+2026/07/24 02:47:10 [audiocpp] sending graceful stop to (pid=19608)
+2026/07/24 02:47:11 [audiocpp] graceful stop error: exit status 1
+2026/07/24 02:47:16 [audiocpp] process (pid=19608) did not exit gracefully within deadline
+2026/07/24 02:47:16 [audiocpp] stopping server (pid=19608)
+2026/07/24 02:47:16 [runtime] shutdown complete
+2026/07/24 02:47:16 [api] shutting down HTTP server
+2026/07/24 02:47:16 shutting down (API request)...
+2026/07/24 02:47:17 audiocpp-runtime exited
