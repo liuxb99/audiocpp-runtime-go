@@ -24,7 +24,7 @@
 - Integration Fix Commit: `991f123`
 - Final Lifecycle Fix Commit: `a7fcde7`
 - Evidence Commit: `08e2144`
-- Metadata Commit: 本輪新 SHA
+- Metadata Commit: `58892d9`
 
 ## Phase 7B 最終狀態
 Phase 7B Backend Abstraction Foundation 完成 ✅
